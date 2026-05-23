@@ -1,0 +1,53 @@
+{
+  "query": {
+    "goal": "explain",
+    "budget_tokens": 8000,
+    "anchor_input": {
+      "symbol": "PaymentService.authorize"
+    }
+  },
+  "anchor": {
+    "node_id": 123,
+    "kind": "callable",
+    "name": "authorize",
+    "qualified_name": "PaymentService.authorize",
+    "file": "src/main/java/acme/PaymentService.java",
+    "line_range": [
+      42,
+      118
+    ]
+  },
+  "index_health": {
+    "indexed_files": 142,
+    "parser_diagnostics": 2,
+    "unresolved_references": 317,
+    "extraction_mode": "tree-sitter-heuristic"
+  },
+  "items": [
+    {
+      "rank": 1,
+      "kind": "target_definition",
+      "node_id": 123,
+      "file": "src/main/java/acme/PaymentService.java",
+      "line_range": [
+        42,
+        118
+      ],
+      "score": 9.8,
+      "token_estimate": 740,
+      "confidence": 0.95,
+      "extractor": "tree-sitter-java",
+      "reason": "primary target definition",
+      "text": "// source snippet goes here"
+    }
+  ],
+  "omitted": [
+    {
+      "name": "AuditLogger.log",
+      "reason": "low score under token budget"
+    }
+  ],
+  "uncertainty_notes": [
+    "gateway.charge(...) appears to be called by the target, but receiver type was not resolved."
+  ]
+}

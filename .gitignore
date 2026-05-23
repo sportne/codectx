@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+dist/
+build/
+
+# Local indexes
+.codectx/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# Generated context bundles
+context-bundles/
+*.context.md
+*.context.json
+*.context.txt
+*.trace.json

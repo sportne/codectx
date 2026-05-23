@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "codectx"
+version = "0.0.1"
+description = "Local code graph and context bundle generator for manual LLM use."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "codectx contributors" }]
+dependencies = [
+  "tree-sitter",
+  "tree-sitter-java",
+  "tree-sitter-cpp",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "ruff",
+  "mypy",
+]
+pretty = [
+  "rich",
+]
+
+[project.scripts]
+codectx = "codectx.cli:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

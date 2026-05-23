@@ -1,0 +1,57 @@
+milestones:
+  - id: M0
+    name: Project skeleton and baseline
+    tasks: [T001, T002, T003]
+  - id: M1
+    name: Source substrate
+    tasks: [T010, T011, T012, T013]
+  - id: M2
+    name: SQLite graph store and fact persistence
+    tasks: [T020, T021, T022, T023, T024]
+  - id: M3
+    name: Tree-sitter definition extraction
+    tasks: [T030, T031, T032, T033, T034, T035]
+  - id: M4
+    name: Symbol search and anchor resolution
+    tasks: [T040, T041, T042, T043]
+  - id: M5
+    name: Context bundle v0 for explain
+    tasks: [T050, T051, T052, T053, T054, T055]
+  - id: M6
+    name: References, call-like edges, and neighborhoods
+    tasks: [T060, T061, T062, T063, T064]
+  - id: M7
+    name: Ranking, budgeting, and provenance traces
+    tasks: [T070, T071, T072, T073]
+  - id: M8
+    name: Additional context goals
+    tasks: [T080, T081, T082]
+  - id: M9
+    name: Verification, validation, and MVP hardening
+    tasks: [T090, T091, T092, T093, T094, T095, T096, T097]
+critical_path_to_first_bundle:
+  - T001
+  - T002
+  - T003
+  - T010
+  - T011
+  - T012
+  - T013
+  - T020
+  - T021
+  - T022
+  - T023
+  - T024
+  - T030
+  - T031
+  - T032
+  - T033
+  - T034
+  - T035
+  - T040
+  - T042
+  - T050
+  - T051
+  - T052
+  - T053
+  - T055
