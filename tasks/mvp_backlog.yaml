@@ -53,7 +53,7 @@ milestones:
       - id: T033
         status: done
       - id: T034
-        status: todo
+        status: done
       - id: T035
         status: todo
   - id: M4

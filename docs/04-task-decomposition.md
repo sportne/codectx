@@ -484,7 +484,7 @@ Acceptance:
 
 ### T034 — Extract C++ definitions
 
-Status: todo
+Status: done
 
 Depends on: T032
 
