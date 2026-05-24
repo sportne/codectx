@@ -59,6 +59,7 @@ _.weight  # edge fact field
 ContextBundle  # context bundle public model
 FileRecord  # scanner public model
 LanguageFrontend  # frontend protocol public API
+JavaTreeSitterFrontend  # Java frontend public API
 SourceSnippet  # source snippet public model
 apply_schema  # graph store schema lifecycle API
 build_parser  # CLI parser construction API

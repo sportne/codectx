@@ -409,7 +409,7 @@ Acceptance:
 
 ### T031 — Implement Java parser harness
 
-Status: todo
+Status: done
 
 Depends on: T030
 
