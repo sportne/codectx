@@ -26,6 +26,85 @@ class FileRecordLike(Protocol):
     metadata: dict[str, Any]
 
 
+class SpanLike(Protocol):
+    """Structural protocol for source span coordinates."""
+
+    start_byte: int
+    end_byte: int
+    start_line: int
+    end_line: int
+
+
+class NodeFactLike(Protocol):
+    """Structural protocol for graph node facts."""
+
+    kind: str
+    language: str | None
+    name: str | None
+    qualified_name: str | None
+    symbol_key: str | None
+    file_path: str | None
+    span: SpanLike | None
+    confidence: float
+    extractor: str
+    metadata: dict[str, Any]
+
+
+class EdgeFactLike(Protocol):
+    """Structural protocol for graph edge facts."""
+
+    kind: str
+    src_key: str | None
+    dst_key: str | None
+    unresolved_src: str | None
+    unresolved_dst: str | None
+    file_path: str | None
+    span: SpanLike | None
+    confidence: float
+    extractor: str
+    weight: float
+    metadata: dict[str, Any]
+
+
+class OccurrenceFactLike(Protocol):
+    """Structural protocol for source occurrence facts."""
+
+    file_path: str
+    role: str
+    text: str
+    span: SpanLike
+    node_key: str | None
+    resolved_key: str | None
+    confidence: float
+    extractor: str
+    metadata: dict[str, Any]
+
+
+class ChunkFactLike(Protocol):
+    """Structural protocol for context chunk facts."""
+
+    file_path: str
+    node_key: str | None
+    kind: str
+    start_line: int
+    end_line: int
+    text: str
+    token_estimate: int
+    metadata: dict[str, Any]
+
+
+class DiagnosticFactLike(Protocol):
+    """Structural protocol for extraction diagnostic facts."""
+
+    file_path: str | None
+    severity: str
+    message: str
+    extractor: str
+    span: SpanLike | None
+    code: str | None
+    metadata: dict[str, Any]
+
+
 class GraphStore:
     """Small SQLite wrapper for the local code graph.
 
@@ -105,6 +184,200 @@ class GraphStore:
                 file_ids[file_record.path] = _lastrowid(cursor)
         return file_ids
 
+    def insert_nodes(
+        self,
+        snapshot_id: int,
+        nodes: Iterable[NodeFactLike],
+        file_ids: dict[str, int],
+    ) -> dict[str, int]:
+        """Batch insert node facts and return node ids by symbol key."""
+        node_ids: dict[str, int] = {}
+        with self.conn:
+            for node in nodes:
+                span = node.span
+                cursor = self.conn.execute(
+                    """
+                    INSERT INTO node(
+                      snapshot_id, kind, language, name, qualified_name, symbol_key,
+                      file_id, start_byte, end_byte, start_line, end_line,
+                      confidence, extractor, metadata_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        snapshot_id,
+                        node.kind,
+                        node.language,
+                        node.name,
+                        node.qualified_name,
+                        node.symbol_key,
+                        _optional_file_id(file_ids, node.file_path),
+                        _span_start_byte(span),
+                        _span_end_byte(span),
+                        _span_start_line(span),
+                        _span_end_line(span),
+                        node.confidence,
+                        node.extractor,
+                        _metadata_json(node.metadata),
+                    ),
+                )
+                if node.symbol_key is not None:
+                    node_ids[node.symbol_key] = _lastrowid(cursor)
+        return node_ids
+
+    def insert_edges(
+        self,
+        snapshot_id: int,
+        edges: Iterable[EdgeFactLike],
+        file_ids: dict[str, int],
+        node_ids: dict[str, int],
+    ) -> list[int]:
+        """Batch insert edge facts and return inserted row ids."""
+        edge_ids: list[int] = []
+        with self.conn:
+            for edge in edges:
+                span = edge.span
+                src_node_id = _optional_node_id(node_ids, edge.src_key)
+                dst_node_id = _optional_node_id(node_ids, edge.dst_key)
+                cursor = self.conn.execute(
+                    """
+                    INSERT INTO edge(
+                      snapshot_id, kind, src_node_id, dst_node_id,
+                      unresolved_src, unresolved_dst, file_id, start_byte, end_byte,
+                      start_line, end_line, confidence, weight, extractor, metadata_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        snapshot_id,
+                        edge.kind,
+                        src_node_id,
+                        dst_node_id,
+                        _unresolved_text(
+                            edge.unresolved_src, edge.src_key, src_node_id
+                        ),
+                        _unresolved_text(
+                            edge.unresolved_dst, edge.dst_key, dst_node_id
+                        ),
+                        _optional_file_id(file_ids, edge.file_path),
+                        _span_start_byte(span),
+                        _span_end_byte(span),
+                        _span_start_line(span),
+                        _span_end_line(span),
+                        edge.confidence,
+                        edge.weight,
+                        edge.extractor,
+                        _metadata_json(edge.metadata),
+                    ),
+                )
+                edge_ids.append(_lastrowid(cursor))
+        return edge_ids
+
+    def insert_occurrences(
+        self,
+        occurrences: Iterable[OccurrenceFactLike],
+        file_ids: dict[str, int],
+        node_ids: dict[str, int],
+    ) -> list[int]:
+        """Batch insert occurrence facts and return inserted row ids."""
+        occurrence_ids: list[int] = []
+        with self.conn:
+            for occurrence in occurrences:
+                cursor = self.conn.execute(
+                    """
+                    INSERT INTO occurrence(
+                      file_id, node_id, role, text, start_byte, end_byte,
+                      start_line, end_line, resolved_node_id, confidence, extractor,
+                      metadata_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        _required_file_id(file_ids, occurrence.file_path),
+                        _optional_node_id(node_ids, occurrence.node_key),
+                        occurrence.role,
+                        occurrence.text,
+                        occurrence.span.start_byte,
+                        occurrence.span.end_byte,
+                        occurrence.span.start_line,
+                        occurrence.span.end_line,
+                        _optional_node_id(node_ids, occurrence.resolved_key),
+                        occurrence.confidence,
+                        occurrence.extractor,
+                        _metadata_json(occurrence.metadata),
+                    ),
+                )
+                occurrence_ids.append(_lastrowid(cursor))
+        return occurrence_ids
+
+    def insert_chunks(
+        self,
+        chunks: Iterable[ChunkFactLike],
+        file_ids: dict[str, int],
+        node_ids: dict[str, int],
+    ) -> list[int]:
+        """Batch insert context chunk facts and return inserted row ids."""
+        chunk_ids: list[int] = []
+        with self.conn:
+            for chunk in chunks:
+                cursor = self.conn.execute(
+                    """
+                    INSERT INTO chunk(
+                      file_id, node_id, kind, start_line, end_line, text,
+                      token_estimate, metadata_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        _required_file_id(file_ids, chunk.file_path),
+                        _optional_node_id(node_ids, chunk.node_key),
+                        chunk.kind,
+                        chunk.start_line,
+                        chunk.end_line,
+                        chunk.text,
+                        chunk.token_estimate,
+                        _metadata_json(chunk.metadata),
+                    ),
+                )
+                chunk_ids.append(_lastrowid(cursor))
+        return chunk_ids
+
+    def insert_diagnostics(
+        self,
+        snapshot_id: int,
+        diagnostics: Iterable[DiagnosticFactLike],
+        file_ids: dict[str, int],
+    ) -> list[int]:
+        """Batch insert diagnostic facts and return inserted row ids."""
+        diagnostic_ids: list[int] = []
+        with self.conn:
+            for diagnostic in diagnostics:
+                span = diagnostic.span
+                cursor = self.conn.execute(
+                    """
+                    INSERT INTO diagnostic(
+                      snapshot_id, file_id, start_byte, end_byte, start_line,
+                      end_line, severity, code, message, extractor, metadata_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        snapshot_id,
+                        _optional_file_id(file_ids, diagnostic.file_path),
+                        _span_start_byte(span),
+                        _span_end_byte(span),
+                        _span_start_line(span),
+                        _span_end_line(span),
+                        diagnostic.severity,
+                        diagnostic.code,
+                        diagnostic.message,
+                        diagnostic.extractor,
+                        _metadata_json(diagnostic.metadata),
+                    ),
+                )
+                diagnostic_ids.append(_lastrowid(cursor))
+        return diagnostic_ids
+
     def integrity_check(self) -> str:
         """Run SQLite's integrity check and return the result string."""
         row = self.conn.execute("PRAGMA integrity_check").fetchone()
@@ -135,3 +408,48 @@ def _lastrowid(cursor: sqlite3.Cursor) -> int:
     if cursor.lastrowid is None:
         raise RuntimeError("SQLite insert did not return a row id")
     return cursor.lastrowid
+
+
+def _optional_file_id(file_ids: dict[str, int], file_path: str | None) -> int | None:
+    if file_path is None:
+        return None
+    return _required_file_id(file_ids, file_path)
+
+
+def _required_file_id(file_ids: dict[str, int], file_path: str) -> int:
+    try:
+        return file_ids[file_path]
+    except KeyError as exc:
+        raise KeyError(f"Unknown file path for graph persistence: {file_path}") from exc
+
+
+def _optional_node_id(node_ids: dict[str, int], node_key: str | None) -> int | None:
+    if node_key is None:
+        return None
+    return node_ids.get(node_key)
+
+
+def _unresolved_text(
+    explicit_unresolved: str | None, node_key: str | None, node_id: int | None
+) -> str | None:
+    if explicit_unresolved is not None:
+        return explicit_unresolved
+    if node_key is not None and node_id is None:
+        return node_key
+    return None
+
+
+def _span_start_byte(span: SpanLike | None) -> int | None:
+    return None if span is None else span.start_byte
+
+
+def _span_end_byte(span: SpanLike | None) -> int | None:
+    return None if span is None else span.end_byte
+
+
+def _span_start_line(span: SpanLike | None) -> int | None:
+    return None if span is None else span.start_line
+
+
+def _span_end_line(span: SpanLike | None) -> int | None:
+    return None if span is None else span.end_line

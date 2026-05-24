@@ -64,6 +64,8 @@ CREATE TABLE IF NOT EXISTS edge (
   file_id INTEGER REFERENCES file(id) ON DELETE SET NULL,
   start_byte INTEGER,
   end_byte INTEGER,
+  start_line INTEGER,
+  end_line INTEGER,
   confidence REAL NOT NULL DEFAULT 1.0,
   weight REAL NOT NULL DEFAULT 1.0,
   extractor TEXT NOT NULL,

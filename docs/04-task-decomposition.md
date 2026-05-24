@@ -313,7 +313,7 @@ Acceptance:
 
 ### T023 — Persist graph facts
 
-Status: todo
+Status: done
 
 Depends on: T021, T003
 

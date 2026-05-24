@@ -71,6 +71,11 @@ byte_range_to_span  # source coordinate conversion API
 estimate_token_count  # source token estimate API
 file_sha256  # scanner hashing public API
 insert_files  # graph store file persistence API
+insert_chunks  # graph store chunk persistence API
+insert_diagnostics  # graph store diagnostic persistence API
+insert_edges  # graph store edge persistence API
+insert_nodes  # graph store node persistence API
+insert_occurrences  # graph store occurrence persistence API
 integrity_check  # graph store health API
 is_likely_test  # scanner public API
 line_range_to_byte_range  # source coordinate conversion API
