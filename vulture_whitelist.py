@@ -70,6 +70,7 @@ detect_language  # scanner public API
 byte_range_to_span  # source coordinate conversion API
 estimate_token_count  # source token estimate API
 file_sha256  # scanner hashing public API
+first_child_by_field_name  # Tree-sitter helper API
 insert_files  # graph store file persistence API
 insert_chunks  # graph store chunk persistence API
 insert_diagnostics  # graph store diagnostic persistence API
@@ -81,6 +82,13 @@ is_likely_test  # scanner public API
 latest_snapshot_id  # graph store snapshot lookup API
 line_range_to_byte_range  # source coordinate conversion API
 main  # console entry point
+make_chunk  # Tree-sitter helper API
+make_language  # Tree-sitter helper API
+make_parser  # Tree-sitter helper API
+named_children  # Tree-sitter helper API
+node_span  # Tree-sitter helper API
+node_text  # Tree-sitter helper API
+parse_source  # Tree-sitter helper API
 snippet_by_byte_span  # source snippet public API
 snippet_by_line_range  # source snippet public API
 to_dict  # context bundle serialization API

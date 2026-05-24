@@ -387,7 +387,7 @@ Acceptance:
 
 ### T030 — Implement Tree-sitter frontend base
 
-Status: todo
+Status: done
 
 Depends on: T003, T013
 
