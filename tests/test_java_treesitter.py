@@ -1,7 +1,27 @@
 from __future__ import annotations
 
+import codectx.frontends.java_treesitter as java_treesitter
 from codectx.frontends.base import LanguageFrontend
 from codectx.frontends.java_treesitter import JavaTreeSitterFrontend
+
+JAVA_SOURCE = b"""package com.acme.payments;
+
+import java.util.List;
+import static java.util.Collections.emptyList;
+
+public class PaymentService {
+    private Gateway gateway;
+
+    public PaymentService(Gateway gateway) {
+        this.gateway = gateway;
+    }
+
+    public List<String> authorize(String user) {
+        return emptyList();
+    }
+}
+"""
+JAVA_PATH = "src/main/java/com/acme/payments/PaymentService.java"
 
 
 def test_java_frontend_satisfies_language_frontend_protocol() -> None:
@@ -15,11 +35,12 @@ def test_java_frontend_parses_valid_source_without_diagnostics() -> None:
 
     facts = frontend.extract("src/Foo.java", b"class Foo { void bar() {} }\n")
 
-    assert facts.nodes == []
-    assert facts.edges == []
-    assert facts.occurrences == []
-    assert facts.chunks == []
     assert facts.diagnostics == []
+    assert {node.name for node in facts.nodes} == {"Foo", "bar"}
+    assert {node.symbol_key for node in facts.nodes} == {
+        "java:src/Foo.java#Foo",
+        "java:src/Foo.java#Foo.bar()",
+    }
 
 
 def test_java_frontend_records_diagnostics_for_invalid_source() -> None:
@@ -35,3 +56,190 @@ def test_java_frontend_records_diagnostics_for_invalid_source() -> None:
     assert "Java parse error" in diagnostic.message
     assert diagnostic.span is not None
     assert diagnostic.span.file_path == "src/Foo.java"
+
+
+def test_java_frontend_records_fallback_diagnostic_when_errors_are_not_located(
+    monkeypatch,
+) -> None:
+    frontend = JavaTreeSitterFrontend()
+    monkeypatch.setattr(java_treesitter, "error_nodes", lambda _root: iter(()))
+
+    facts = frontend.extract("src/Foo.java", b"class Foo {")
+
+    assert len(facts.diagnostics) == 1
+    assert facts.diagnostics[0].code == "parse_error"
+
+
+def test_java_frontend_extracts_definition_nodes() -> None:
+    frontend = JavaTreeSitterFrontend()
+
+    facts = frontend.extract(JAVA_PATH, JAVA_SOURCE)
+
+    nodes = {node.symbol_key: node for node in facts.nodes}
+    assert set(nodes) == {
+        f"java:{JAVA_PATH}#PaymentService",
+        f"java:{JAVA_PATH}#PaymentService.gateway",
+        f"java:{JAVA_PATH}#PaymentService.<init>(Gateway)",
+        f"java:{JAVA_PATH}#PaymentService.authorize(String)",
+    }
+    service = nodes[f"java:{JAVA_PATH}#PaymentService"]
+    assert service.kind == "type"
+    assert service.qualified_name == "com.acme.payments.PaymentService"
+    assert service.span is not None
+    assert service.span.start_line == 6
+    assert service.span.end_line == 16
+    assert service.metadata == {
+        "declaration_kind": "class_declaration",
+        "package": "com.acme.payments",
+    }
+    assert nodes[f"java:{JAVA_PATH}#PaymentService.gateway"].kind == "field"
+    assert nodes[f"java:{JAVA_PATH}#PaymentService.<init>(Gateway)"].qualified_name == (
+        "com.acme.payments.PaymentService.<init>(Gateway)"
+    )
+    assert (
+        nodes[f"java:{JAVA_PATH}#PaymentService.authorize(String)"].span.start_line
+        == 13
+    )
+
+
+def test_java_frontend_handles_single_segment_package_and_type_variants() -> None:
+    frontend = JavaTreeSitterFrontend()
+    source = b"""package acme;
+
+public interface Gateway {
+    Result authorize();
+
+    enum Result { APPROVED }
+}
+
+record Receipt(String id) {}
+"""
+
+    facts = frontend.extract("src/Gateway.java", source)
+
+    nodes = {node.symbol_key: node for node in facts.nodes}
+    assert nodes["java:src/Gateway.java#Gateway"].qualified_name == "acme.Gateway"
+    assert nodes["java:src/Gateway.java#Gateway.authorize()"].kind == "callable"
+    assert nodes["java:src/Gateway.java#Gateway.Result"].metadata == {
+        "declaration_kind": "enum_declaration",
+        "package": "acme",
+    }
+    assert nodes["java:src/Gateway.java#Receipt"].metadata == {
+        "declaration_kind": "record_declaration",
+        "package": "acme",
+    }
+    assert (
+        "java:src/Gateway.java#Gateway",
+        "java:src/Gateway.java#Gateway.Result",
+    ) in {
+        (edge.src_key, edge.dst_key) for edge in facts.edges if edge.kind == "contains"
+    }
+
+
+def test_java_frontend_extracts_imports_and_containment_edges() -> None:
+    frontend = JavaTreeSitterFrontend()
+
+    facts = frontend.extract(JAVA_PATH, JAVA_SOURCE)
+
+    import_edges = [edge for edge in facts.edges if edge.kind == "imports"]
+    assert [(edge.unresolved_dst, edge.metadata) for edge in import_edges] == [
+        ("java.util.List", {"static": False}),
+        ("java.util.Collections.emptyList", {"static": True}),
+    ]
+    contains_edges = [edge for edge in facts.edges if edge.kind == "contains"]
+    assert {(edge.src_key, edge.dst_key) for edge in contains_edges} == {
+        (
+            f"java:{JAVA_PATH}#PaymentService",
+            f"java:{JAVA_PATH}#PaymentService.gateway",
+        ),
+        (
+            f"java:{JAVA_PATH}#PaymentService",
+            f"java:{JAVA_PATH}#PaymentService.<init>(Gateway)",
+        ),
+        (
+            f"java:{JAVA_PATH}#PaymentService",
+            f"java:{JAVA_PATH}#PaymentService.authorize(String)",
+        ),
+    }
+
+
+def test_java_frontend_preserves_wildcard_import_text() -> None:
+    frontend = JavaTreeSitterFrontend()
+
+    facts = frontend.extract(
+        "src/Foo.java",
+        b"import static java.util.Collections.*;\nclass Foo {}\n",
+    )
+
+    import_edge = next(edge for edge in facts.edges if edge.kind == "imports")
+    assert import_edge.unresolved_dst == "java.util.Collections.*"
+    assert import_edge.metadata == {"static": True}
+    import_occurrence = next(
+        occurrence for occurrence in facts.occurrences if occurrence.role == "import"
+    )
+    assert (
+        _span_text(
+            b"import static java.util.Collections.*;\nclass Foo {}\n",
+            import_occurrence.span,
+        )
+        == "java.util.Collections.*"
+    )
+
+
+def test_java_frontend_uses_signatures_for_overloaded_callables() -> None:
+    frontend = JavaTreeSitterFrontend()
+
+    facts = frontend.extract(
+        "src/Foo.java",
+        b"class Foo { void bar() {} void bar(String value) {} "
+        b"void bar(int value) {} void bar(String... values) {} }\n",
+    )
+
+    assert {node.symbol_key for node in facts.nodes if node.kind == "callable"} == {
+        "java:src/Foo.java#Foo.bar()",
+        "java:src/Foo.java#Foo.bar(String)",
+        "java:src/Foo.java#Foo.bar(int)",
+        "java:src/Foo.java#Foo.bar(String...)",
+    }
+
+
+def test_java_frontend_extracts_occurrences_and_chunks() -> None:
+    frontend = JavaTreeSitterFrontend()
+
+    facts = frontend.extract(JAVA_PATH, JAVA_SOURCE)
+
+    definition_occurrences = [
+        occurrence
+        for occurrence in facts.occurrences
+        if occurrence.role == "definition"
+    ]
+    assert {
+        (occurrence.text, occurrence.span.start_line)
+        for occurrence in definition_occurrences
+    } == {
+        ("PaymentService", 6),
+        ("gateway", 7),
+        ("PaymentService", 9),
+        ("authorize", 13),
+    }
+    import_occurrences = [
+        occurrence for occurrence in facts.occurrences if occurrence.role == "import"
+    ]
+    assert [occurrence.text for occurrence in import_occurrences] == [
+        "java.util.List",
+        "java.util.Collections.emptyList",
+    ]
+
+    chunks = {chunk.node_key: chunk for chunk in facts.chunks}
+    service_chunk = chunks[f"java:{JAVA_PATH}#PaymentService"]
+    assert service_chunk.start_line == 6
+    assert service_chunk.end_line == 16
+    assert service_chunk.text.startswith("public class PaymentService")
+    method_chunk = chunks[f"java:{JAVA_PATH}#PaymentService.authorize(String)"]
+    assert method_chunk.start_line == 13
+    assert method_chunk.end_line == 15
+    assert "public List<String> authorize" in method_chunk.text
+
+
+def _span_text(source: bytes, span) -> str:
+    return source[span.start_byte : span.end_byte].decode("utf-8")

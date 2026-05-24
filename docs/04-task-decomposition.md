@@ -457,7 +457,7 @@ Acceptance:
 
 ### T033 — Extract Java definitions
 
-Status: todo
+Status: done
 
 Depends on: T031
 
