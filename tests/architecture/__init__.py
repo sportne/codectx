@@ -1,0 +1,1 @@
+"""Architecture-focused test package."""

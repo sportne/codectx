@@ -1,14 +1,36 @@
-# Python
+# Python bytecode and caches
 __pycache__/
 *.py[cod]
+*.so
+
+# Virtual environments and local env files
+.env
+.env.*
+.venv/
+env/
+venv/
+
+# Packaging and build outputs
+build/
+dist/
 *.egg-info/
+*.eggs/
+
+# Test and coverage artifacts
+.coverage
+.coverage.*
+.hypothesis/
 .pytest_cache/
+coverage.json
+coverage.xml
+htmlcov/
+
+# Type checker and linter caches
 .ruff_cache/
 .mypy_cache/
-.venv/
-venv/
-dist/
-build/
+.pyre/
+.tox/
+.nox/
 
 # Local indexes
 .codectx/
@@ -20,6 +42,9 @@ build/
 .DS_Store
 .idea/
 .vscode/
+.codex
+.cursorignore
+.cursorindexingignore
 
 # Generated context bundles
 context-bundles/

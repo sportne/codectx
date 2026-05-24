@@ -1,3 +1,5 @@
+"""Source language and test-file detection helpers."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -7,6 +9,7 @@ CPP_EXTENSIONS = {".cpp", ".cc", ".cxx", ".c++", ".hpp", ".hh", ".hxx", ".h++", 
 
 
 def detect_language(path: str | Path) -> str | None:
+    """Detect the source language for a path by extension."""
     suffix = Path(path).suffix.lower()
     if suffix in JAVA_EXTENSIONS:
         return "java"
@@ -16,6 +19,7 @@ def detect_language(path: str | Path) -> str | None:
 
 
 def is_likely_test(path: str | Path) -> bool:
+    """Return whether a path looks like a test source file."""
     p = Path(path).as_posix().lower()
     name = Path(path).name.lower()
     return (

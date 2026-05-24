@@ -1,3 +1,5 @@
+"""Canonical source span coordinates."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -20,4 +22,5 @@ class SourceSpan:
     end_col: int
 
     def contains_line(self, line: int) -> bool:
+        """Return whether the span includes a 1-based source line."""
         return self.start_line <= line <= self.end_line

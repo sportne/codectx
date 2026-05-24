@@ -1,3 +1,5 @@
+"""Shared language frontend contracts and graph fact models."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -8,6 +10,8 @@ from codectx.source.spans import SourceSpan
 
 @dataclass(frozen=True)
 class NodeFact:
+    """A language-neutral graph node fact extracted from source."""
+
     kind: str
     language: str | None
     name: str | None
@@ -22,6 +26,8 @@ class NodeFact:
 
 @dataclass(frozen=True)
 class EdgeFact:
+    """A language-neutral graph edge fact extracted from source."""
+
     kind: str
     src_key: str | None
     dst_key: str | None
@@ -37,6 +43,8 @@ class EdgeFact:
 
 @dataclass(frozen=True)
 class OccurrenceFact:
+    """A source occurrence of a symbol-like text span."""
+
     file_path: str
     role: str
     text: str
@@ -50,6 +58,8 @@ class OccurrenceFact:
 
 @dataclass(frozen=True)
 class ChunkFact:
+    """A chunk of source text available for context bundles."""
+
     file_path: str
     node_key: str | None
     kind: str
@@ -62,6 +72,8 @@ class ChunkFact:
 
 @dataclass(frozen=True)
 class DiagnosticFact:
+    """A frontend diagnostic produced while extracting graph facts."""
+
     file_path: str | None
     severity: str
     message: str
@@ -73,6 +85,8 @@ class DiagnosticFact:
 
 @dataclass(frozen=True)
 class ExtractedFacts:
+    """All graph facts extracted from one source file."""
+
     nodes: list[NodeFact] = field(default_factory=list)
     edges: list[EdgeFact] = field(default_factory=list)
     occurrences: list[OccurrenceFact] = field(default_factory=list)
@@ -81,6 +95,8 @@ class ExtractedFacts:
 
 
 class LanguageFrontend(Protocol):
+    """Protocol implemented by language-specific graph extractors."""
+
     language: str
 
     def extract(self, file_path: str, source: bytes) -> ExtractedFacts:

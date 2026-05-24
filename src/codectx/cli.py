@@ -1,3 +1,5 @@
+"""Command-line interface for codectx."""
+
 from __future__ import annotations
 
 import argparse
@@ -7,6 +9,7 @@ from codectx import __version__
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the top-level command parser."""
     parser = argparse.ArgumentParser(
         prog="codectx",
         description="Local code graph and context bundle generator for manual LLM use.",
@@ -48,10 +51,14 @@ def build_parser() -> argparse.ArgumentParser:
         default="explain",
     )
     p_context.add_argument("--budget", type=int, default=8000)
-    p_context.add_argument("--format", choices=["markdown", "json", "text"], default="markdown")
+    p_context.add_argument(
+        "--format", choices=["markdown", "json", "text"], default="markdown"
+    )
     p_context.add_argument("--output", type=Path, default=None)
 
-    p_neighborhood = sub.add_parser("neighborhood", help="Show a bounded graph neighborhood.")
+    p_neighborhood = sub.add_parser(
+        "neighborhood", help="Show a bounded graph neighborhood."
+    )
     p_neighborhood.add_argument("--repo", type=Path, default=Path.cwd())
     p_neighborhood.add_argument("--db", type=Path, default=None)
     p_neighborhood.add_argument("--symbol", required=True)
@@ -71,6 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the codectx command-line interface."""
     parser = build_parser()
     args = parser.parse_args(argv)
 

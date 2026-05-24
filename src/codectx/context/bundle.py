@@ -1,11 +1,15 @@
+"""Serializable context bundle models."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
 @dataclass(frozen=True)
 class ContextItem:
+    """One ranked item selected for a context bundle."""
+
     rank: int
     kind: str
     file: str | None
@@ -21,6 +25,8 @@ class ContextItem:
 
 @dataclass(frozen=True)
 class OmittedItem:
+    """One relevant item omitted from a context bundle."""
+
     name: str | None
     reason: str
     score: float | None = None
@@ -28,6 +34,8 @@ class OmittedItem:
 
 @dataclass(frozen=True)
 class ContextBundle:
+    """A source-grounded context bundle ready for formatting."""
+
     query: dict[str, Any]
     anchor: dict[str, Any]
     index_health: dict[str, Any]
@@ -37,4 +45,5 @@ class ContextBundle:
     trace: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable dictionary representation."""
         return asdict(self)
