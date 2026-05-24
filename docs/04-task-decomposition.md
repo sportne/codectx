@@ -433,7 +433,7 @@ Acceptance:
 
 ### T032 — Implement C++ parser harness
 
-Status: todo
+Status: done
 
 Depends on: T030
 

@@ -57,6 +57,7 @@ _.unresolved_src  # edge fact field
 _.weight  # edge fact field
 
 ContextBundle  # context bundle public model
+CppTreeSitterFrontend  # C++ frontend public API
 FileRecord  # scanner public model
 LanguageFrontend  # frontend protocol public API
 JavaTreeSitterFrontend  # Java frontend public API
