@@ -23,7 +23,7 @@ milestones:
       - id: T012
         status: done
       - id: T013
-        status: todo
+        status: done
   - id: M2
     name: SQLite graph store and fact persistence
     tasks:

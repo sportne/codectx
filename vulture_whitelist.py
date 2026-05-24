@@ -59,15 +59,19 @@ _.weight  # edge fact field
 ContextBundle  # context bundle public model
 FileRecord  # scanner public model
 LanguageFrontend  # frontend protocol public API
+SourceSnippet  # source snippet public model
 apply_schema  # graph store schema lifecycle API
 build_parser  # CLI parser construction API
 close  # graph store lifecycle API
 contains_line  # source span query API
 detect_language  # scanner public API
 byte_range_to_span  # source coordinate conversion API
+estimate_token_count  # source token estimate API
 file_sha256  # scanner hashing public API
 integrity_check  # graph store health API
 is_likely_test  # scanner public API
 line_range_to_byte_range  # source coordinate conversion API
 main  # console entry point
+snippet_by_byte_span  # source snippet public API
+snippet_by_line_range  # source snippet public API
 to_dict  # context bundle serialization API

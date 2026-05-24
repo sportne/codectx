@@ -189,7 +189,7 @@ Acceptance:
 
 ### T013 — Implement source snippet extraction
 
-Status: todo
+Status: done
 
 Depends on: T012
 
