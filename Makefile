@@ -5,13 +5,24 @@ SRC_DIR := src
 TEST_DIR := tests
 PACKAGE := codectx
 PYTEST_FLAGS ?= -s
+ARTIFACT := dist/codectx.pex
+ARTIFACT_PLATFORMS ?= \
+	--platform manylinux2014_x86_64-cp-311-cp311 \
+	--platform manylinux2014_x86_64-cp-312-cp312 \
+	--platform win_amd64-cp-311-cp311 \
+	--platform win_amd64-cp-312-cp312
+PEX_FLAGS ?= --venv --python-shebang "/usr/bin/env python3"
+PEX_RESOLVE_FLAGS ?= \
+	--only-binary tree-sitter \
+	--only-binary tree-sitter-cpp \
+	--only-binary tree-sitter-java
 
 .PHONY: \
 	help setup-venv install-dev \
 	format format-check \
 	lint typecheck dead-code reachability \
 	test architecture coverage coverage-report \
-	package clean ci
+	package artifact artifact-smoke clean ci
 
 help:
 	@echo "codectx Makefile targets:"
@@ -28,6 +39,8 @@ help:
 	@echo "  make coverage       - Run tests and enforce 90% per-file coverage"
 	@echo "  make coverage-report - Run tests with terminal and JSON coverage reporting"
 	@echo "  make package        - Build source and wheel distributions"
+	@echo "  make artifact       - Build one Linux/Windows runnable PEX artifact at $(ARTIFACT)"
+	@echo "  make artifact-smoke - Build and smoke-test the PEX artifact"
 	@echo "  make clean          - Remove local build and test artifacts"
 	@echo "  make ci             - Run format-check, lint, reachability, architecture, and coverage gates"
 
@@ -72,6 +85,14 @@ coverage: coverage-report
 
 package:
 	"$(PYTHON)" -m build --no-isolation
+
+artifact:
+	mkdir -p "$(dir $(ARTIFACT))"
+	"$(PYTHON)" -m pex --project . -c codectx -o "$(ARTIFACT)" $(ARTIFACT_PLATFORMS) $(PEX_FLAGS) $(PEX_RESOLVE_FLAGS)
+
+artifact-smoke: artifact
+	"$(PYTHON)" "$(ARTIFACT)" --version
+	"$(PYTHON)" "$(ARTIFACT)" --help >/dev/null
 
 clean:
 	rm -rf build dist .coverage .mypy_cache .pytest_cache .ruff_cache *.egg-info src/*.egg-info coverage.json htmlcov coverage.xml

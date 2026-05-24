@@ -83,6 +83,31 @@ Start here:
 3. [`docs/03-verification-validation-plan.md`](docs/03-verification-validation-plan.md)
 4. [`docs/04-task-decomposition.md`](docs/04-task-decomposition.md)
 
+## Single-file artifact
+
+For offline deployment, build one runnable PEX artifact that contains `codectx`
+and its Python dependencies:
+
+```bash
+make setup-venv install-dev
+make artifact-smoke
+```
+
+The artifact is written to `dist/codectx.pex`. By default it targets amd64
+Linux and Windows for CPython 3.11 and 3.12. Copy that file plus a compatible
+Python interpreter into the target environment, then run:
+
+```bash
+python dist/codectx.pex --help
+python dist/codectx.pex --version
+```
+
+The default target platforms can be overridden when building:
+
+```bash
+make artifact ARTIFACT_PLATFORMS="--platform manylinux2014_x86_64-cp-312-cp312"
+```
+
 ## Development status
 
 This repository is an initial planning and skeleton repository. The documentation defines the MVP and the ordered task decomposition needed to implement it.
