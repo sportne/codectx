@@ -19,7 +19,7 @@ milestones:
       - id: T010
         status: done
       - id: T011
-        status: todo
+        status: done
       - id: T012
         status: todo
       - id: T013

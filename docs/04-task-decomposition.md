@@ -142,7 +142,7 @@ Acceptance:
 
 ### T011 — Implement repository scanner
 
-Status: todo
+Status: done
 
 Depends on: T010
 
