@@ -21,7 +21,7 @@ milestones:
       - id: T011
         status: done
       - id: T012
-        status: todo
+        status: done
       - id: T013
         status: todo
   - id: M2

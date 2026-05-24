@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import hashlib
 import os
 from pathlib import Path
 from typing import Final
 
+from codectx.scanner.hashing import content_sha256
 from codectx.scanner.language_detect import detect_language, is_likely_test
 from codectx.scanner.models import FileRecord
+from codectx.source.spans import line_count
 
 IGNORED_DIR_NAMES: Final[frozenset[str]] = frozenset(
     {
@@ -63,9 +64,9 @@ def scan_repository(repo_root: str | Path) -> list[FileRecord]:
                 FileRecord(
                     path=relative_path,
                     language=language,
-                    content_hash=hashlib.sha256(content).hexdigest(),
+                    content_hash=content_sha256(content),
                     size_bytes=len(content),
-                    line_count=_count_lines(content),
+                    line_count=line_count(content),
                     is_test=is_likely_test(relative_path),
                     is_generated=is_generated,
                     metadata=metadata,
@@ -81,15 +82,6 @@ def _visible_directories(dirnames: list[str]) -> list[str]:
 
 def _is_ignored_directory(name: str) -> bool:
     return name in IGNORED_DIR_NAMES or name.startswith("bazel-")
-
-
-def _count_lines(content: bytes) -> int:
-    if not content:
-        return 0
-    line_count = content.count(b"\n")
-    if not content.endswith(b"\n"):
-        line_count += 1
-    return line_count
 
 
 def _is_likely_generated(path: str) -> bool:

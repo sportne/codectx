@@ -165,7 +165,7 @@ Acceptance:
 
 ### T012 — Implement hashing and line offsets
 
-Status: todo
+Status: done
 
 Depends on: T011
 

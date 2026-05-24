@@ -64,7 +64,10 @@ build_parser  # CLI parser construction API
 close  # graph store lifecycle API
 contains_line  # source span query API
 detect_language  # scanner public API
+byte_range_to_span  # source coordinate conversion API
+file_sha256  # scanner hashing public API
 integrity_check  # graph store health API
 is_likely_test  # scanner public API
+line_range_to_byte_range  # source coordinate conversion API
 main  # console entry point
 to_dict  # context bundle serialization API
