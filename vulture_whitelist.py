@@ -64,10 +64,13 @@ apply_schema  # graph store schema lifecycle API
 build_parser  # CLI parser construction API
 close  # graph store lifecycle API
 contains_line  # source span query API
+create_repo  # graph store repository persistence API
+create_snapshot  # graph store snapshot persistence API
 detect_language  # scanner public API
 byte_range_to_span  # source coordinate conversion API
 estimate_token_count  # source token estimate API
 file_sha256  # scanner hashing public API
+insert_files  # graph store file persistence API
 integrity_check  # graph store health API
 is_likely_test  # scanner public API
 line_range_to_byte_range  # source coordinate conversion API

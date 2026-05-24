@@ -290,7 +290,7 @@ Acceptance:
 
 ### T022 — Persist repository snapshot and files
 
-Status: todo
+Status: done
 
 Depends on: T021, T012
 
