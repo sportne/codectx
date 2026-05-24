@@ -26,6 +26,7 @@ Each task includes:
 ```text
 ID
 Title
+Status
 Depends on
 Requirement coverage
 Work
@@ -33,11 +34,15 @@ Deliverable
 Acceptance
 ```
 
+Status values are `todo`, `in_progress`, `blocked`, or `done`.
+
 ---
 
 ## M0 — Project skeleton and baseline
 
 ### T001 — Create Python package skeleton
+
+Status: done
 
 Depends on: none
 
@@ -62,6 +67,8 @@ Acceptance:
 
 ### T002 — Add CLI shell
 
+Status: done
+
 Depends on: T001
 
 Requirement coverage: FR-100 through FR-107, NFR-001
@@ -83,6 +90,8 @@ Acceptance:
 - Stub commands return successful exit code or explicit not-yet-implemented message.
 
 ### T003 — Define core dataclasses
+
+Status: in_progress
 
 Depends on: T001
 
@@ -110,6 +119,8 @@ Acceptance:
 
 ### T010 — Implement language detection
 
+Status: done
+
 Depends on: T003
 
 Requirement coverage: FR-003
@@ -130,6 +141,8 @@ Acceptance:
 - Unsupported files return `None` or equivalent.
 
 ### T011 — Implement repository scanner
+
+Status: todo
 
 Depends on: T010
 
@@ -152,6 +165,8 @@ Acceptance:
 
 ### T012 — Implement hashing and line offsets
 
+Status: todo
+
 Depends on: T011
 
 Requirement coverage: FR-004, FR-005, FR-012
@@ -173,6 +188,8 @@ Acceptance:
 - Byte-to-line conversion round-trips for known fixture positions.
 
 ### T013 — Implement source snippet extraction
+
+Status: todo
 
 Depends on: T012
 
@@ -200,6 +217,8 @@ Acceptance:
 
 ### T020 — Implement SQLite schema
 
+Status: done
+
 Depends on: T003
 
 Requirement coverage: FR-040, FR-041, FR-046
@@ -222,6 +241,8 @@ Acceptance:
 - Required tables and indexes exist.
 
 ### T021 — Implement GraphStore connection and schema application
+
+Status: done
 
 Depends on: T020
 
@@ -246,6 +267,8 @@ Acceptance:
 
 ### T022 — Persist repository snapshot and files
 
+Status: todo
+
 Depends on: T021, T012
 
 Requirement coverage: FR-010, FR-040
@@ -266,6 +289,8 @@ Acceptance:
 - Integration test indexes a temp repo and verifies file rows.
 
 ### T023 — Persist graph facts
+
+Status: todo
 
 Depends on: T021, T003
 
@@ -291,6 +316,8 @@ Acceptance:
 
 ### T024 — Implement index health stats persistence
 
+Status: todo
+
 Depends on: T022, T023
 
 Requirement coverage: FR-029, FR-107, NFR-022
@@ -314,6 +341,8 @@ Acceptance:
 
 ### T030 — Implement Tree-sitter frontend base
 
+Status: todo
+
 Depends on: T003, T013
 
 Requirement coverage: FR-020, FR-021, FR-024
@@ -333,6 +362,8 @@ Acceptance:
 - Unit test can parse a minimal Java and C++ source string through frontend helpers.
 
 ### T031 — Implement Java parser harness
+
+Status: todo
 
 Depends on: T030
 
@@ -356,6 +387,8 @@ Acceptance:
 
 ### T032 — Implement C++ parser harness
 
+Status: todo
+
 Depends on: T030
 
 Requirement coverage: FR-021, FR-029
@@ -377,6 +410,8 @@ Acceptance:
 - Invalid C++ records diagnostic without crashing.
 
 ### T033 — Extract Java definitions
+
+Status: todo
 
 Depends on: T031
 
@@ -402,6 +437,8 @@ Acceptance:
 - Extracted spans point to correct source lines.
 
 ### T034 — Extract C++ definitions
+
+Status: todo
 
 Depends on: T032
 
@@ -429,6 +466,8 @@ Acceptance:
 
 ### T035 — Wire frontends into `codectx index`
 
+Status: todo
+
 Depends on: T022, T023, T033, T034
 
 Requirement coverage: FR-100, FR-020 through FR-029
@@ -455,6 +494,8 @@ Acceptance:
 
 ### T040 — Implement symbol search query
 
+Status: todo
+
 Depends on: T035
 
 Requirement coverage: FR-042, FR-101, FR-102
@@ -474,6 +515,8 @@ Acceptance:
 - `codectx symbols PaymentService --repo fixture` returns expected node.
 
 ### T041 — Add optional FTS support
+
+Status: todo
 
 Depends on: T040
 
@@ -496,6 +539,8 @@ Acceptance:
 
 ### T042 — Implement file/line anchor resolution
 
+Status: todo
+
 Depends on: T035
 
 Requirement coverage: FR-043, FR-060
@@ -516,6 +561,8 @@ Acceptance:
 - Line outside a method resolves to enclosing type or file.
 
 ### T043 — Implement node and edge inspection
+
+Status: todo
 
 Depends on: T035
 
@@ -541,6 +588,8 @@ Acceptance:
 
 ### T050 — Define context bundle model
 
+Status: done
+
 Depends on: T003
 
 Requirement coverage: FR-060 through FR-065, FR-080 through FR-084
@@ -559,6 +608,8 @@ Acceptance:
 - Unit test serializes a bundle to dict/JSON.
 
 ### T051 — Generate required candidates for `explain`
+
+Status: todo
 
 Depends on: T042, T050
 
@@ -580,6 +631,8 @@ Acceptance:
 - Fixture `explain` bundle includes target method and enclosing class/type.
 
 ### T052 — Implement Markdown formatter
+
+Status: todo
 
 Depends on: T050, T051
 
@@ -603,6 +656,8 @@ Acceptance:
 
 ### T053 — Implement JSON formatter
 
+Status: todo
+
 Depends on: T050, T051
 
 Requirement coverage: FR-081
@@ -622,6 +677,8 @@ Acceptance:
 
 ### T054 — Implement plain text formatter
 
+Status: todo
+
 Depends on: T050, T051
 
 Requirement coverage: FR-082
@@ -639,6 +696,8 @@ Acceptance:
 - Plain text output includes target, files, lines, reasons, snippets.
 
 ### T055 — Wire `codectx context --goal explain`
+
+Status: todo
 
 Depends on: T051, T052, T053, T054
 
@@ -667,6 +726,8 @@ Acceptance:
 
 ### T060 — Extract Java call-like occurrences
 
+Status: todo
+
 Depends on: T033, T035
 
 Requirement coverage: FR-027, FR-028
@@ -687,6 +748,8 @@ Acceptance:
 - Fixture test shows `authorize` has call-like edge to `validate` or unresolved `gateway.charge`.
 
 ### T061 — Extract C++ call-like occurrences
+
+Status: todo
 
 Depends on: T034, T035
 
@@ -709,6 +772,8 @@ Acceptance:
 
 ### T062 — Extract Java/C++ references to types and fields heuristically
 
+Status: todo
+
 Depends on: T060, T061
 
 Requirement coverage: FR-027, FR-028, FR-068
@@ -728,6 +793,8 @@ Acceptance:
 - Fixture tests show selected type references and unresolved references.
 
 ### T063 — Implement bounded graph neighborhood query
+
+Status: todo
 
 Depends on: T060, T061, T062
 
@@ -749,6 +816,8 @@ Acceptance:
 - `codectx neighborhood --symbol X --depth 1` shows direct relationships.
 
 ### T064 — Add neighborhood candidates to `explain`
+
+Status: todo
 
 Depends on: T063, T055
 
@@ -775,6 +844,8 @@ Acceptance:
 
 ### T070 — Implement scoring model
 
+Status: todo
+
 Depends on: T064
 
 Requirement coverage: FR-061, NFR-043
@@ -794,6 +865,8 @@ Acceptance:
 - Score trace is included in JSON output.
 
 ### T071 — Implement token budget pruning
+
+Status: todo
 
 Depends on: T070
 
@@ -818,6 +891,8 @@ Acceptance:
 
 ### T072 — Add goal-specific edge weights
 
+Status: todo
+
 Depends on: T070
 
 Requirement coverage: FR-066, FR-067, FR-068
@@ -836,6 +911,8 @@ Acceptance:
 - Unit tests show different goals rank candidates differently.
 
 ### T073 — Add provenance and uncertainty rendering
+
+Status: todo
 
 Depends on: T071
 
@@ -862,6 +939,8 @@ Acceptance:
 
 ### T080 — Implement `failure-modes` goal
 
+Status: todo
+
 Depends on: T072, T073
 
 Requirement coverage: FR-067
@@ -881,6 +960,8 @@ Acceptance:
 
 ### T081 — Implement `dependencies` goal
 
+Status: todo
+
 Depends on: T072, T073
 
 Requirement coverage: FR-068
@@ -898,6 +979,8 @@ Acceptance:
 - Fixture bundle includes import/include and dependency snippets.
 
 ### T082 — Implement `call-neighborhood` goal
+
+Status: todo
 
 Depends on: T063, T072, T073
 
@@ -923,6 +1006,8 @@ Acceptance:
 
 ### T090 — Create Java golden fixture repository
 
+Status: todo
+
 Depends on: T080, T081, T082
 
 Requirement coverage: V&V fixture coverage
@@ -941,6 +1026,8 @@ Acceptance:
 - Fixture tests run in CI/local test suite.
 
 ### T091 — Create C++ golden fixture repository
+
+Status: todo
 
 Depends on: T080, T081, T082
 
@@ -961,6 +1048,8 @@ Acceptance:
 
 ### T092 — Implement CLI acceptance tests
 
+Status: todo
+
 Depends on: T090, T091
 
 Requirement coverage: FR-100 through FR-107
@@ -979,6 +1068,8 @@ Acceptance:
 - Tests cover `index`, `health`, `symbols`, `context`, `neighborhood`, `inspect-node`, `inspect-edge`.
 
 ### T093 — Implement database integrity checks
+
+Status: todo
 
 Depends on: T092
 
@@ -1000,6 +1091,8 @@ Acceptance:
 
 ### T094 — Add performance smoke tests
 
+Status: todo
+
 Depends on: T092
 
 Requirement coverage: NFR-010 through NFR-013
@@ -1019,6 +1112,8 @@ Acceptance:
 - Tests can be run manually or as optional CI marker.
 
 ### T095 — Manual validation on real repositories
+
+Status: todo
 
 Depends on: T093
 
@@ -1042,6 +1137,8 @@ Acceptance:
 
 ### T096 — MVP polish and documentation pass
 
+Status: todo
+
 Depends on: T095
 
 Requirement coverage: all MVP requirements
@@ -1063,6 +1160,8 @@ Acceptance:
 - New user can install, index a fixture, and generate a bundle using README instructions.
 
 ### T097 — MVP acceptance review
+
+Status: todo
 
 Depends on: T096
 

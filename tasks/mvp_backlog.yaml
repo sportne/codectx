@@ -1,34 +1,135 @@
+task_schema:
+  status:
+    description: Current implementation state for the task.
+    values: [todo, in_progress, blocked, done]
+    default: todo
 milestones:
   - id: M0
     name: Project skeleton and baseline
-    tasks: [T001, T002, T003]
+    tasks:
+      - id: T001
+        status: done
+      - id: T002
+        status: done
+      - id: T003
+        status: in_progress
   - id: M1
     name: Source substrate
-    tasks: [T010, T011, T012, T013]
+    tasks:
+      - id: T010
+        status: done
+      - id: T011
+        status: todo
+      - id: T012
+        status: todo
+      - id: T013
+        status: todo
   - id: M2
     name: SQLite graph store and fact persistence
-    tasks: [T020, T021, T022, T023, T024]
+    tasks:
+      - id: T020
+        status: done
+      - id: T021
+        status: done
+      - id: T022
+        status: todo
+      - id: T023
+        status: todo
+      - id: T024
+        status: todo
   - id: M3
     name: Tree-sitter definition extraction
-    tasks: [T030, T031, T032, T033, T034, T035]
+    tasks:
+      - id: T030
+        status: todo
+      - id: T031
+        status: todo
+      - id: T032
+        status: todo
+      - id: T033
+        status: todo
+      - id: T034
+        status: todo
+      - id: T035
+        status: todo
   - id: M4
     name: Symbol search and anchor resolution
-    tasks: [T040, T041, T042, T043]
+    tasks:
+      - id: T040
+        status: todo
+      - id: T041
+        status: todo
+      - id: T042
+        status: todo
+      - id: T043
+        status: todo
   - id: M5
     name: Context bundle v0 for explain
-    tasks: [T050, T051, T052, T053, T054, T055]
+    tasks:
+      - id: T050
+        status: done
+      - id: T051
+        status: todo
+      - id: T052
+        status: todo
+      - id: T053
+        status: todo
+      - id: T054
+        status: todo
+      - id: T055
+        status: todo
   - id: M6
     name: References, call-like edges, and neighborhoods
-    tasks: [T060, T061, T062, T063, T064]
+    tasks:
+      - id: T060
+        status: todo
+      - id: T061
+        status: todo
+      - id: T062
+        status: todo
+      - id: T063
+        status: todo
+      - id: T064
+        status: todo
   - id: M7
     name: Ranking, budgeting, and provenance traces
-    tasks: [T070, T071, T072, T073]
+    tasks:
+      - id: T070
+        status: todo
+      - id: T071
+        status: todo
+      - id: T072
+        status: todo
+      - id: T073
+        status: todo
   - id: M8
     name: Additional context goals
-    tasks: [T080, T081, T082]
+    tasks:
+      - id: T080
+        status: todo
+      - id: T081
+        status: todo
+      - id: T082
+        status: todo
   - id: M9
     name: Verification, validation, and MVP hardening
-    tasks: [T090, T091, T092, T093, T094, T095, T096, T097]
+    tasks:
+      - id: T090
+        status: todo
+      - id: T091
+        status: todo
+      - id: T092
+        status: todo
+      - id: T093
+        status: todo
+      - id: T094
+        status: todo
+      - id: T095
+        status: todo
+      - id: T096
+        status: todo
+      - id: T097
+        status: todo
 critical_path_to_first_bundle:
   - T001
   - T002
