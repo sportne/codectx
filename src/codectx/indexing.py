@@ -1,0 +1,147 @@
+"""Index orchestration services used by the CLI."""
+
+from __future__ import annotations
+
+import hashlib
+from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import Path
+
+from codectx.frontends.base import LanguageFrontend
+from codectx.graph.store import GraphStore
+from codectx.scanner.models import FileRecord
+from codectx.scanner.repo import scan_repository
+
+
+@dataclass(frozen=True)
+class IndexResult:
+    """Result of indexing a repository."""
+
+    repo: Path
+    db_path: Path
+    snapshot_id: int
+    stats: dict[str, str]
+
+
+@dataclass(frozen=True)
+class HealthResult:
+    """Persisted index health for a repository."""
+
+    repo: Path
+    db_path: Path
+    snapshot_id: int
+    stats: dict[str, str]
+    integrity: str | None = None
+
+
+@dataclass(frozen=True)
+class IndexingError:
+    """Actionable indexing error suitable for CLI display."""
+
+    message: str
+
+
+FrontendRegistry = Mapping[str, LanguageFrontend]
+
+
+def run_index(
+    repo: str | Path,
+    *,
+    db_path: str | Path | None = None,
+    rebuild: bool = False,
+    frontends: FrontendRegistry | None = None,
+) -> IndexResult | IndexingError:
+    """Scan and persist index data for a repository."""
+    del frontends
+    repo_path = Path(repo).resolve()
+    if not repo_path.exists() or not repo_path.is_dir():
+        return IndexingError(
+            f"Repository path does not exist or is not a directory: {repo_path}"
+        )
+
+    resolved_db_path = default_db_path(repo_path, db_path)
+    resolved_db_path.parent.mkdir(parents=True, exist_ok=True)
+    if rebuild:
+        remove_db_files(resolved_db_path)
+
+    records = scan_repository(repo_path)
+    fingerprint = content_fingerprint(records)
+    with GraphStore(resolved_db_path) as store:
+        store.apply_schema()
+        repo_id = store.create_repo(repo_path)
+        snapshot_id = store.create_snapshot(repo_id, content_fingerprint=fingerprint)
+        store.insert_files(snapshot_id, records)
+        stats = store.build_index_stats(snapshot_id)
+        store.upsert_index_stats(snapshot_id, stats)
+
+    return IndexResult(
+        repo=repo_path,
+        db_path=resolved_db_path,
+        snapshot_id=snapshot_id,
+        stats=stats,
+    )
+
+
+def read_health(
+    repo: str | Path,
+    *,
+    db_path: str | Path | None = None,
+    include_integrity: bool = False,
+) -> HealthResult | IndexingError:
+    """Read persisted index health for a repository."""
+    repo_path = Path(repo).resolve()
+    resolved_db_path = default_db_path(repo_path, db_path)
+    if not resolved_db_path.exists():
+        return IndexingError(
+            f"No codectx index found at {resolved_db_path}. "
+            f"Run `codectx index {repo_path}` first."
+        )
+
+    with GraphStore(resolved_db_path) as store:
+        store.apply_schema()
+        snapshot_id = store.latest_snapshot_id(repo_path)
+        if snapshot_id is None:
+            return IndexingError(
+                f"No codectx index found for {repo_path}. "
+                f"Run `codectx index {repo_path}` first."
+            )
+        stats = store.get_index_stats(snapshot_id)
+        if not stats:
+            return IndexingError(
+                f"No index health stats found for {repo_path}. "
+                f"Run `codectx index {repo_path} --rebuild`."
+            )
+        integrity = store.integrity_check() if include_integrity else None
+
+    return HealthResult(
+        repo=repo_path,
+        db_path=resolved_db_path,
+        snapshot_id=snapshot_id,
+        stats=stats,
+        integrity=integrity,
+    )
+
+
+def default_db_path(repo: Path, explicit_db_path: str | Path | None) -> Path:
+    """Resolve an explicit DB path or return the default repo-local path."""
+    if explicit_db_path is not None:
+        return Path(explicit_db_path).resolve()
+    return repo / ".codectx" / "graph.sqlite"
+
+
+def remove_db_files(db_path: Path) -> None:
+    """Remove SQLite database files used by rebuild."""
+    for path in (db_path, Path(f"{db_path}-wal"), Path(f"{db_path}-shm")):
+        if path.exists():
+            path.unlink()
+
+
+def content_fingerprint(records: list[FileRecord]) -> str:
+    """Return a deterministic fingerprint for scanned file records."""
+    digest = hashlib.sha256()
+    for record in records:
+        digest.update(record.path.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(record.content_hash.encode("ascii"))
+        digest.update(b"\0")
+    return digest.hexdigest()

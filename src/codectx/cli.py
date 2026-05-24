@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 from pathlib import Path
 
 from codectx import __version__
-from codectx.graph.store import GraphStore
-from codectx.scanner.models import FileRecord
-from codectx.scanner.repo import scan_repository
+from codectx.indexing import (
+    HealthResult,
+    IndexingError,
+    IndexResult,
+    read_health,
+    run_index,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -97,86 +100,39 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run_index(args: argparse.Namespace) -> int:
-    repo = args.repo.resolve()
-    if not repo.exists() or not repo.is_dir():
-        print(f"Repository path does not exist or is not a directory: {repo}")
+    result = run_index(args.repo, db_path=args.db, rebuild=args.rebuild)
+    if isinstance(result, IndexingError):
+        print(result.message)
         return 1
 
-    db_path = _db_path(repo, args.db)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    if args.rebuild:
-        _remove_db_files(db_path)
-
-    records = scan_repository(repo)
-    fingerprint = _content_fingerprint(records)
-    with GraphStore(db_path) as store:
-        store.apply_schema()
-        repo_id = store.create_repo(repo)
-        snapshot_id = store.create_snapshot(repo_id, content_fingerprint=fingerprint)
-        store.insert_files(snapshot_id, records)
-        stats = store.build_index_stats(snapshot_id)
-        store.upsert_index_stats(snapshot_id, stats)
-
-    print(f"Indexed {repo}")
-    print(f"database: {db_path}")
-    print(f"snapshot_id: {snapshot_id}")
-    _print_stats(stats)
+    _print_index_result(result)
     return 0
 
 
 def _run_health(args: argparse.Namespace) -> int:
-    repo = args.repo.resolve()
-    db_path = _db_path(repo, args.db)
-    if not db_path.exists():
-        print(f"No codectx index found at {db_path}. Run `codectx index {repo}` first.")
+    result = read_health(args.repo, db_path=args.db, include_integrity=args.integrity)
+    if isinstance(result, IndexingError):
+        print(result.message)
         return 1
 
-    with GraphStore(db_path) as store:
-        store.apply_schema()
-        snapshot_id = store.latest_snapshot_id(repo)
-        if snapshot_id is None:
-            print(
-                f"No codectx index found for {repo}. Run `codectx index {repo}` first."
-            )
-            return 1
-        stats = store.get_index_stats(snapshot_id)
-        if not stats:
-            print(
-                f"No index health stats found for {repo}. "
-                f"Run `codectx index {repo} --rebuild`."
-            )
-            return 1
-        integrity = store.integrity_check() if args.integrity else None
-
-    print(f"Index health for {repo}")
-    print(f"database: {db_path}")
-    print(f"snapshot_id: {snapshot_id}")
-    if integrity is not None:
-        print(f"integrity: {integrity}")
-    _print_stats(stats)
+    _print_health_result(result)
     return 0
 
 
-def _db_path(repo: Path, explicit_db: Path | None) -> Path:
-    if explicit_db is not None:
-        return explicit_db.resolve()
-    return repo / ".codectx" / "graph.sqlite"
+def _print_index_result(result: IndexResult) -> None:
+    print(f"Indexed {result.repo}")
+    print(f"database: {result.db_path}")
+    print(f"snapshot_id: {result.snapshot_id}")
+    _print_stats(result.stats)
 
 
-def _remove_db_files(db_path: Path) -> None:
-    for path in (db_path, Path(f"{db_path}-wal"), Path(f"{db_path}-shm")):
-        if path.exists():
-            path.unlink()
-
-
-def _content_fingerprint(records: list[FileRecord]) -> str:
-    digest = hashlib.sha256()
-    for record in records:
-        digest.update(record.path.encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(record.content_hash.encode("ascii"))
-        digest.update(b"\0")
-    return digest.hexdigest()
+def _print_health_result(result: HealthResult) -> None:
+    print(f"Index health for {result.repo}")
+    print(f"database: {result.db_path}")
+    print(f"snapshot_id: {result.snapshot_id}")
+    if result.integrity is not None:
+        print(f"integrity: {result.integrity}")
+    _print_stats(result.stats)
 
 
 def _print_stats(stats: dict[str, str]) -> None:
