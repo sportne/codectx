@@ -6,6 +6,7 @@ _.anchor  # context bundle field
 _.chunks  # extracted facts field
 _.code  # diagnostic field
 _.confidence  # graph fact and context bundle field
+_.content_hash  # file record field
 _.diagnostics  # extracted facts field
 _.dst_key  # edge fact field
 _.edges  # extracted facts field
@@ -16,9 +17,12 @@ _.extractor  # graph fact and context bundle field
 _.file  # context item field
 _.file_path  # graph fact and source span field
 _.index_health  # context bundle field
+_.is_generated  # file record field
+_.is_test  # file record field
 _.items  # context bundle field
 _.kind  # graph fact and context item field
 _.language  # frontend protocol and graph fact field
+_.line_count  # file record field
 _.line_range  # context item field
 _.message  # diagnostic field
 _.metadata  # graph fact and context item field
@@ -36,6 +40,7 @@ _.role  # occurrence fact field
 _.row_factory  # sqlite connection configuration
 _.score  # context and omitted item field
 _.severity  # diagnostic field
+_.size_bytes  # file record field
 _.source  # frontend protocol parameter
 _.span  # graph fact field
 _.src_key  # edge fact field
@@ -52,6 +57,7 @@ _.unresolved_src  # edge fact field
 _.weight  # edge fact field
 
 ContextBundle  # context bundle public model
+FileRecord  # scanner public model
 LanguageFrontend  # frontend protocol public API
 apply_schema  # graph store schema lifecycle API
 build_parser  # CLI parser construction API

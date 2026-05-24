@@ -12,7 +12,7 @@ milestones:
       - id: T002
         status: done
       - id: T003
-        status: in_progress
+        status: done
   - id: M1
     name: Source substrate
     tasks:

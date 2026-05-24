@@ -91,7 +91,7 @@ Acceptance:
 
 ### T003 — Define core dataclasses
 
-Status: in_progress
+Status: done
 
 Depends on: T001
 
