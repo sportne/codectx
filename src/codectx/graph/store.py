@@ -13,96 +13,203 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 SCHEMA_VERSION = 1
 
 
-class FileRecordLike(Protocol):
+class _FileRecordLike(Protocol):
     """Structural protocol for scanner file records persisted by the graph store."""
 
-    path: str
-    language: str | None
-    content_hash: str
-    size_bytes: int
-    line_count: int
-    is_test: bool
-    is_generated: bool
-    metadata: dict[str, Any]
+    @property
+    def path(self) -> str: ...
+
+    @property
+    def language(self) -> str | None: ...
+
+    @property
+    def content_hash(self) -> str: ...
+
+    @property
+    def size_bytes(self) -> int: ...
+
+    @property
+    def line_count(self) -> int: ...
+
+    @property
+    def is_test(self) -> bool: ...
+
+    @property
+    def is_generated(self) -> bool: ...
+
+    @property
+    def metadata(self) -> dict[str, Any]: ...
 
 
-class SpanLike(Protocol):
+class _SpanLike(Protocol):
     """Structural protocol for source span coordinates."""
 
-    start_byte: int
-    end_byte: int
-    start_line: int
-    end_line: int
+    @property
+    def start_byte(self) -> int: ...
+
+    @property
+    def end_byte(self) -> int: ...
+
+    @property
+    def start_line(self) -> int: ...
+
+    @property
+    def end_line(self) -> int: ...
 
 
-class NodeFactLike(Protocol):
+class _NodeFactLike(Protocol):
     """Structural protocol for graph node facts."""
 
-    kind: str
-    language: str | None
-    name: str | None
-    qualified_name: str | None
-    symbol_key: str | None
-    file_path: str | None
-    span: SpanLike | None
-    confidence: float
-    extractor: str
-    metadata: dict[str, Any]
+    @property
+    def kind(self) -> str: ...
+
+    @property
+    def language(self) -> str | None: ...
+
+    @property
+    def name(self) -> str | None: ...
+
+    @property
+    def qualified_name(self) -> str | None: ...
+
+    @property
+    def symbol_key(self) -> str | None: ...
+
+    @property
+    def file_path(self) -> str | None: ...
+
+    @property
+    def span(self) -> _SpanLike | None: ...
+
+    @property
+    def confidence(self) -> float: ...
+
+    @property
+    def extractor(self) -> str: ...
+
+    @property
+    def metadata(self) -> dict[str, Any]: ...
 
 
-class EdgeFactLike(Protocol):
+class _EdgeFactLike(Protocol):
     """Structural protocol for graph edge facts."""
 
-    kind: str
-    src_key: str | None
-    dst_key: str | None
-    unresolved_src: str | None
-    unresolved_dst: str | None
-    file_path: str | None
-    span: SpanLike | None
-    confidence: float
-    extractor: str
-    weight: float
-    metadata: dict[str, Any]
+    @property
+    def kind(self) -> str: ...
+
+    @property
+    def src_key(self) -> str | None: ...
+
+    @property
+    def dst_key(self) -> str | None: ...
+
+    @property
+    def unresolved_src(self) -> str | None: ...
+
+    @property
+    def unresolved_dst(self) -> str | None: ...
+
+    @property
+    def file_path(self) -> str | None: ...
+
+    @property
+    def span(self) -> _SpanLike | None: ...
+
+    @property
+    def confidence(self) -> float: ...
+
+    @property
+    def extractor(self) -> str: ...
+
+    @property
+    def weight(self) -> float: ...
+
+    @property
+    def metadata(self) -> dict[str, Any]: ...
 
 
-class OccurrenceFactLike(Protocol):
+class _OccurrenceFactLike(Protocol):
     """Structural protocol for source occurrence facts."""
 
-    file_path: str
-    role: str
-    text: str
-    span: SpanLike
-    node_key: str | None
-    resolved_key: str | None
-    confidence: float
-    extractor: str
-    metadata: dict[str, Any]
+    @property
+    def file_path(self) -> str: ...
+
+    @property
+    def role(self) -> str: ...
+
+    @property
+    def text(self) -> str: ...
+
+    @property
+    def span(self) -> _SpanLike: ...
+
+    @property
+    def node_key(self) -> str | None: ...
+
+    @property
+    def resolved_key(self) -> str | None: ...
+
+    @property
+    def confidence(self) -> float: ...
+
+    @property
+    def extractor(self) -> str: ...
+
+    @property
+    def metadata(self) -> dict[str, Any]: ...
 
 
-class ChunkFactLike(Protocol):
+class _ChunkFactLike(Protocol):
     """Structural protocol for context chunk facts."""
 
-    file_path: str
-    node_key: str | None
-    kind: str
-    start_line: int
-    end_line: int
-    text: str
-    token_estimate: int
-    metadata: dict[str, Any]
+    @property
+    def file_path(self) -> str: ...
+
+    @property
+    def node_key(self) -> str | None: ...
+
+    @property
+    def kind(self) -> str: ...
+
+    @property
+    def start_line(self) -> int: ...
+
+    @property
+    def end_line(self) -> int: ...
+
+    @property
+    def text(self) -> str: ...
+
+    @property
+    def token_estimate(self) -> int: ...
+
+    @property
+    def metadata(self) -> dict[str, Any]: ...
 
 
-class DiagnosticFactLike(Protocol):
+class _DiagnosticFactLike(Protocol):
     """Structural protocol for extraction diagnostic facts."""
 
-    file_path: str | None
-    severity: str
-    message: str
-    extractor: str
-    span: SpanLike | None
-    code: str | None
-    metadata: dict[str, Any]
+    @property
+    def file_path(self) -> str | None: ...
+
+    @property
+    def severity(self) -> str: ...
+
+    @property
+    def message(self) -> str: ...
+
+    @property
+    def extractor(self) -> str: ...
+
+    @property
+    def span(self) -> _SpanLike | None: ...
+
+    @property
+    def code(self) -> str | None: ...
+
+    @property
+    def metadata(self) -> dict[str, Any]: ...
 
 
 class GraphStore:
@@ -148,7 +255,7 @@ class GraphStore:
         return _lastrowid(cursor)
 
     def insert_files(
-        self, snapshot_id: int, files: Iterable[FileRecordLike]
+        self, snapshot_id: int, files: Iterable[_FileRecordLike]
     ) -> dict[str, int]:
         """Batch insert source file rows and return database ids by file path."""
         file_ids: dict[str, int] = {}
@@ -187,7 +294,7 @@ class GraphStore:
     def insert_nodes(
         self,
         snapshot_id: int,
-        nodes: Iterable[NodeFactLike],
+        nodes: Iterable[_NodeFactLike],
         file_ids: dict[str, int],
     ) -> dict[str, int]:
         """Batch insert node facts and return node ids by symbol key."""
@@ -228,7 +335,7 @@ class GraphStore:
     def insert_edges(
         self,
         snapshot_id: int,
-        edges: Iterable[EdgeFactLike],
+        edges: Iterable[_EdgeFactLike],
         file_ids: dict[str, int],
         node_ids: dict[str, int],
     ) -> list[int]:
@@ -275,7 +382,7 @@ class GraphStore:
 
     def insert_occurrences(
         self,
-        occurrences: Iterable[OccurrenceFactLike],
+        occurrences: Iterable[_OccurrenceFactLike],
         file_ids: dict[str, int],
         node_ids: dict[str, int],
     ) -> list[int]:
@@ -312,7 +419,7 @@ class GraphStore:
 
     def insert_chunks(
         self,
-        chunks: Iterable[ChunkFactLike],
+        chunks: Iterable[_ChunkFactLike],
         file_ids: dict[str, int],
         node_ids: dict[str, int],
     ) -> list[int]:
@@ -345,7 +452,7 @@ class GraphStore:
     def insert_diagnostics(
         self,
         snapshot_id: int,
-        diagnostics: Iterable[DiagnosticFactLike],
+        diagnostics: Iterable[_DiagnosticFactLike],
         file_ids: dict[str, int],
     ) -> list[int]:
         """Batch insert diagnostic facts and return inserted row ids."""
@@ -377,6 +484,74 @@ class GraphStore:
                 )
                 diagnostic_ids.append(_lastrowid(cursor))
         return diagnostic_ids
+
+    def build_index_stats(self, snapshot_id: int) -> dict[str, str]:
+        """Build persisted health statistics for a snapshot."""
+        stats = {
+            "files": str(_count_rows(self.conn, "file", snapshot_id)),
+            "nodes": str(_count_rows(self.conn, "node", snapshot_id)),
+            "edges": str(_count_rows(self.conn, "edge", snapshot_id)),
+            "occurrences": str(_count_occurrences(self.conn, snapshot_id)),
+            "chunks": str(_count_chunks(self.conn, snapshot_id)),
+            "diagnostics": str(_count_rows(self.conn, "diagnostic", snapshot_id)),
+            "unresolved_references": str(
+                _count_unresolved_edges(self.conn, snapshot_id)
+            ),
+        }
+        for language, count in self.conn.execute(
+            """
+            SELECT COALESCE(language, 'unknown') AS language, COUNT(*) AS count
+            FROM file
+            WHERE snapshot_id = ?
+            GROUP BY COALESCE(language, 'unknown')
+            ORDER BY language
+            """,
+            (snapshot_id,),
+        ):
+            stats[f"language.{language}"] = str(count)
+        return stats
+
+    def upsert_index_stats(self, snapshot_id: int, stats: dict[str, str]) -> None:
+        """Persist index health statistics for a snapshot."""
+        with self.conn:
+            self.conn.executemany(
+                """
+                INSERT INTO index_stat(snapshot_id, key, value)
+                VALUES (?, ?, ?)
+                ON CONFLICT(snapshot_id, key) DO UPDATE SET value = excluded.value
+                """,
+                ((snapshot_id, key, value) for key, value in sorted(stats.items())),
+            )
+
+    def get_index_stats(self, snapshot_id: int) -> dict[str, str]:
+        """Read persisted index health statistics for a snapshot."""
+        return {
+            str(row["key"]): str(row["value"])
+            for row in self.conn.execute(
+                "SELECT key, value FROM index_stat WHERE snapshot_id = ? ORDER BY key",
+                (snapshot_id,),
+            ).fetchall()
+        }
+
+    def latest_snapshot_id(self, root_path: str | Path | None = None) -> int | None:
+        """Return the most recent snapshot id, optionally scoped to a repo root."""
+        if root_path is None:
+            row = self.conn.execute(
+                "SELECT id FROM snapshot ORDER BY indexed_at DESC, id DESC LIMIT 1"
+            ).fetchone()
+        else:
+            row = self.conn.execute(
+                """
+                SELECT snapshot.id
+                FROM snapshot
+                JOIN repo ON repo.id = snapshot.repo_id
+                WHERE repo.root_path = ?
+                ORDER BY snapshot.indexed_at DESC, snapshot.id DESC
+                LIMIT 1
+                """,
+                (str(Path(root_path).resolve()),),
+            ).fetchone()
+        return None if row is None else int(row["id"])
 
     def integrity_check(self) -> str:
         """Run SQLite's integrity check and return the result string."""
@@ -439,17 +614,70 @@ def _unresolved_text(
     return None
 
 
-def _span_start_byte(span: SpanLike | None) -> int | None:
+def _span_start_byte(span: _SpanLike | None) -> int | None:
     return None if span is None else span.start_byte
 
 
-def _span_end_byte(span: SpanLike | None) -> int | None:
+def _span_end_byte(span: _SpanLike | None) -> int | None:
     return None if span is None else span.end_byte
 
 
-def _span_start_line(span: SpanLike | None) -> int | None:
+def _span_start_line(span: _SpanLike | None) -> int | None:
     return None if span is None else span.start_line
 
 
-def _span_end_line(span: SpanLike | None) -> int | None:
+def _span_end_line(span: _SpanLike | None) -> int | None:
     return None if span is None else span.end_line
+
+
+def _count_rows(conn: sqlite3.Connection, table: str, snapshot_id: int) -> int:
+    if table not in {"file", "node", "edge", "diagnostic"}:
+        raise ValueError(f"unsupported snapshot table: {table}")
+    row = conn.execute(
+        f"SELECT COUNT(*) FROM {table} WHERE snapshot_id = ?",  # noqa: S608
+        (snapshot_id,),
+    ).fetchone()
+    return int(row[0])
+
+
+def _count_occurrences(conn: sqlite3.Connection, snapshot_id: int) -> int:
+    row = conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM occurrence
+        JOIN file ON file.id = occurrence.file_id
+        WHERE file.snapshot_id = ?
+        """,
+        (snapshot_id,),
+    ).fetchone()
+    return int(row[0])
+
+
+def _count_chunks(conn: sqlite3.Connection, snapshot_id: int) -> int:
+    row = conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM chunk
+        JOIN file ON file.id = chunk.file_id
+        WHERE file.snapshot_id = ?
+        """,
+        (snapshot_id,),
+    ).fetchone()
+    return int(row[0])
+
+
+def _count_unresolved_edges(conn: sqlite3.Connection, snapshot_id: int) -> int:
+    row = conn.execute(
+        """
+        SELECT
+          SUM(
+            CASE WHEN unresolved_src IS NULL THEN 0 ELSE 1 END
+            + CASE WHEN unresolved_dst IS NULL THEN 0 ELSE 1 END
+          )
+        FROM edge
+        WHERE snapshot_id = ?
+          AND (unresolved_src IS NOT NULL OR unresolved_dst IS NOT NULL)
+        """,
+        (snapshot_id,),
+    ).fetchone()
+    return int(row[0] or 0)

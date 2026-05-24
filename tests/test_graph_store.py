@@ -338,6 +338,108 @@ def test_graph_store_persists_graph_facts(tmp_path) -> None:
         assert json.loads(diagnostic_row["metadata_json"]) == {"detail": "fixture"}
 
 
+def test_graph_store_persists_and_reads_index_stats(tmp_path) -> None:
+    files = [
+        FileRecord(
+            path="src/Foo.java",
+            language="java",
+            content_hash="abc123",
+            size_bytes=12,
+            line_count=1,
+        ),
+        FileRecord(
+            path="src/native.cpp",
+            language="cpp",
+            content_hash="def456",
+            size_bytes=14,
+            line_count=1,
+        ),
+    ]
+    span = SourceSpan(
+        file_path="src/Foo.java",
+        start_byte=0,
+        end_byte=12,
+        start_line=1,
+        start_col=0,
+        end_line=1,
+        end_col=12,
+    )
+    db_path = tmp_path / "codectx.sqlite"
+
+    with GraphStore(db_path) as store:
+        store.apply_schema()
+        repo_id = store.create_repo(tmp_path)
+        snapshot_id = store.create_snapshot(repo_id)
+        file_ids = store.insert_files(snapshot_id, files)
+        node_ids = store.insert_nodes(
+            snapshot_id,
+            [
+                NodeFact(
+                    kind="type",
+                    language="java",
+                    name="Foo",
+                    qualified_name="Foo",
+                    symbol_key="java:src/Foo.java#Foo",
+                    file_path="src/Foo.java",
+                    span=span,
+                    confidence=1.0,
+                    extractor="test",
+                    metadata={},
+                )
+            ],
+            file_ids,
+        )
+        store.insert_edges(
+            snapshot_id,
+            [
+                EdgeFact(
+                    kind="calls",
+                    src_key="java:src/Foo.java#Foo",
+                    dst_key="java:src/Foo.java#Missing",
+                    unresolved_src=None,
+                    unresolved_dst=None,
+                    file_path="src/Foo.java",
+                    span=span,
+                    confidence=0.5,
+                    extractor="test",
+                    metadata={},
+                ),
+                EdgeFact(
+                    kind="calls",
+                    src_key="java:src/Foo.java#MissingSource",
+                    dst_key="java:src/Foo.java#AlsoMissing",
+                    unresolved_src=None,
+                    unresolved_dst=None,
+                    file_path="src/Foo.java",
+                    span=span,
+                    confidence=0.4,
+                    extractor="test",
+                    metadata={},
+                ),
+            ],
+            file_ids,
+            node_ids,
+        )
+
+        stats = store.build_index_stats(snapshot_id)
+        store.upsert_index_stats(snapshot_id, stats)
+        store.upsert_index_stats(snapshot_id, {"files": "2", "custom": "yes"})
+
+        assert store.latest_snapshot_id(tmp_path) == snapshot_id
+        assert store.get_index_stats(snapshot_id) == {
+            "chunks": "0",
+            "custom": "yes",
+            "diagnostics": "0",
+            "edges": "2",
+            "files": "2",
+            "language.cpp": "1",
+            "language.java": "1",
+            "nodes": "1",
+            "occurrences": "0",
+            "unresolved_references": "3",
+        }
+
+
 def _write(path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")

@@ -339,7 +339,7 @@ Acceptance:
 
 ### T024 — Implement index health stats persistence
 
-Status: todo
+Status: done
 
 Depends on: T022, T023
 

@@ -78,6 +78,7 @@ insert_nodes  # graph store node persistence API
 insert_occurrences  # graph store occurrence persistence API
 integrity_check  # graph store health API
 is_likely_test  # scanner public API
+latest_snapshot_id  # graph store snapshot lookup API
 line_range_to_byte_range  # source coordinate conversion API
 main  # console entry point
 snippet_by_byte_span  # source snippet public API

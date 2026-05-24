@@ -38,7 +38,7 @@ milestones:
       - id: T023
         status: done
       - id: T024
-        status: todo
+        status: done
   - id: M3
     name: Tree-sitter definition extraction
     tasks:
