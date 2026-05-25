@@ -128,6 +128,8 @@ milestones:
   - id: M9
     name: Verification, validation, and MVP hardening
     tasks:
+      - id: T089
+        status: done
       - id: T090
         status: todo
       - id: T091

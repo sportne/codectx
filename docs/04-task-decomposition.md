@@ -1162,11 +1162,32 @@ Acceptance:
 
 ## M9 — Verification, validation, and MVP hardening
 
+### T089 — Lock M9 indexing service boundary
+
+Status: done
+
+Depends on: T069
+
+Requirement coverage: NFR-040, NFR-043
+
+Work:
+
+- Confirm `cli.py` delegates index and health behavior to `codectx.indexing`.
+- Confirm no duplicate indexing orchestration service is introduced.
+
+Deliverable:
+
+- Architecture coverage for the MVP indexing service boundary.
+
+Acceptance:
+
+- Boundary tests fail if CLI imports scanner/frontend/store orchestration directly or a duplicate indexing service appears.
+
 ### T090 — Create Java golden fixture repository
 
 Status: todo
 
-Depends on: T080, T081, T082
+Depends on: T080, T081, T082, T089
 
 Requirement coverage: V&V fixture coverage
 
@@ -1361,7 +1382,7 @@ Then continue:
 T060 → T061 → T062 → T063 → T064
 T070 → T071 → T072 → T073
 T080 → T081 → T082
-T090 → T091 → T092 → T093 → T094 → T095 → T096 → T097
+T089 → T090 → T091 → T092 → T093 → T094 → T095 → T096 → T097
 ```
 
 ## MVP completion definition

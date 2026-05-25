@@ -154,6 +154,37 @@ def test_cli_keeps_indexing_orchestration_in_indexing_service() -> None:
     assert not violations, "\n".join(violations)
 
 
+def test_cli_imports_index_and_health_services_from_indexing_module() -> None:
+    cli_path = helpers.PACKAGE_DIR / "cli.py"
+    imported_names: set[str] = set()
+
+    tree = helpers.parse_module(cli_path)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        if helpers.resolve_from_import(cli_path, node) != "codectx.indexing":
+            continue
+        imported_names.update(alias.name for alias in node.names)
+
+    assert {"run_index", "read_health"} <= imported_names
+
+
+def test_indexing_orchestration_has_single_service_module() -> None:
+    disallowed_service_names = {
+        "index_service",
+        "indexing_service",
+        "indexer",
+        "indexers",
+    }
+    duplicate_services = sorted(
+        path
+        for path in helpers.iter_python_files(helpers.PACKAGE_DIR)
+        if path.stem in disallowed_service_names
+    )
+
+    assert duplicate_services == []
+
+
 def test_internal_private_modules_are_not_imported_cross_layer() -> None:
     violations: list[str] = []
 
