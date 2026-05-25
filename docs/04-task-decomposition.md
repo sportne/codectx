@@ -1248,7 +1248,7 @@ Acceptance:
 
 ### T093 — Implement database integrity checks
 
-Status: todo
+Status: done
 
 Depends on: T092
 

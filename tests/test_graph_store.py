@@ -38,6 +38,133 @@ def test_graph_store_applies_schema_and_integrity_check(tmp_path) -> None:
     assert {"repo", "snapshot", "file", "node", "edge", "occurrence"} <= tables
 
 
+def test_graph_store_integrity_report_detects_graph_violations(tmp_path) -> None:
+    db_path = tmp_path / "codectx.sqlite"
+    file_record = FileRecord(
+        path="src/Foo.java",
+        language="java",
+        content_hash="abc123",
+        size_bytes=12,
+        line_count=2,
+    )
+
+    with GraphStore(db_path) as store:
+        store.apply_schema()
+        repo_id = store.create_repo(tmp_path / "repo")
+        snapshot_id = store.create_snapshot(repo_id, content_fingerprint="bad")
+        store.insert_files(snapshot_id, [file_record])
+        store.upsert_index_stats(snapshot_id, {"files": "1"})
+        store.conn.execute("PRAGMA ignore_check_constraints = ON")
+        store.conn.execute("PRAGMA foreign_keys = OFF")
+        store.conn.execute(
+            """
+            INSERT INTO node(
+              snapshot_id, kind, language, name, file_id, start_byte, end_byte,
+              start_line, end_line, confidence, extractor
+            )
+            VALUES (?, 'type', 'java', 'Broken', 999, 12, 3, 3, 1, 1.0, 'test')
+            """,
+            (snapshot_id,),
+        )
+        store.conn.execute(
+            """
+            INSERT INTO edge(snapshot_id, kind, confidence, weight, extractor)
+            VALUES (?, 'calls', 1.0, 1.0, 'test')
+            """,
+            (snapshot_id,),
+        )
+        store.conn.execute(
+            """
+            INSERT INTO chunk(
+              file_id, kind, start_line, end_line, text, token_estimate
+            )
+            SELECT id, 'definition', 5, 4, 'broken', 1 FROM file WHERE path = ?
+            """,
+            ("src/Foo.java",),
+        )
+        store.conn.commit()
+
+        report = store.integrity_report(snapshot_id)
+
+    assert report.summary() == "failed"
+    assert report.sqlite == "ok"
+    assert report.foreign_keys == "failed (1)"
+    assert report.span_ranges == "failed (6)"
+    assert report.unresolved_edges == "failed (1)"
+    assert any("foreign key violation" in problem for problem in report.problems)
+    assert any(
+        "node" in problem and "start_byte" in problem for problem in report.problems
+    )
+    assert any(
+        "chunk" in problem and "start_line" in problem for problem in report.problems
+    )
+    assert any(
+        "edge" in problem and "endpoint" in problem for problem in report.problems
+    )
+
+
+def test_graph_store_integrity_report_detects_byte_and_snapshot_bounds(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "codectx.sqlite"
+    first_file = FileRecord(
+        path="src/First.java",
+        language="java",
+        content_hash="abc123",
+        size_bytes=10,
+        line_count=2,
+    )
+    second_file = FileRecord(
+        path="src/Second.java",
+        language="java",
+        content_hash="def456",
+        size_bytes=10,
+        line_count=2,
+    )
+
+    with GraphStore(db_path) as store:
+        store.apply_schema()
+        repo_id = store.create_repo(tmp_path / "repo")
+        first_snapshot_id = store.create_snapshot(repo_id, content_fingerprint="first")
+        second_snapshot_id = store.create_snapshot(
+            repo_id, content_fingerprint="second"
+        )
+        first_file_id = store.insert_files(first_snapshot_id, [first_file])[
+            "src/First.java"
+        ]
+        second_file_id = store.insert_files(second_snapshot_id, [second_file])[
+            "src/Second.java"
+        ]
+        store.conn.execute(
+            """
+            INSERT INTO node(
+              snapshot_id, kind, language, name, file_id, start_byte, end_byte,
+              start_line, end_line, confidence, extractor
+            )
+            VALUES (?, 'type', 'java', 'BadBytes', ?, -1, 99, 1, 1, 1.0, 'test')
+            """,
+            (first_snapshot_id, first_file_id),
+        )
+        store.conn.execute(
+            """
+            INSERT INTO node(
+              snapshot_id, kind, language, name, file_id, start_byte, end_byte,
+              start_line, end_line, confidence, extractor
+            )
+            VALUES (?, 'type', 'java', 'WrongSnapshot', ?, 0, 1, 1, 1, 1.0, 'test')
+            """,
+            (first_snapshot_id, second_file_id),
+        )
+        store.conn.commit()
+
+        report = store.integrity_report(first_snapshot_id)
+
+    assert report.span_ranges == "failed (3)"
+    assert any("negative start_byte" in problem for problem in report.problems)
+    assert any("end_byte exceeds file size" in problem for problem in report.problems)
+    assert any("outside the snapshot" in problem for problem in report.problems)
+
+
 def test_graph_store_persists_repository_snapshot_and_files(tmp_path) -> None:
     repo_root = tmp_path / "repo"
     _write(repo_root / "src" / "main" / "java" / "acme" / "PaymentService.java", "a\nb")

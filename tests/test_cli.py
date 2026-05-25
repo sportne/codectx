@@ -553,7 +553,49 @@ def test_index_and_health_commands_persist_and_display_stats(
     health_output = capsys.readouterr().out
     assert f"Index health for {repo.resolve()}" in health_output
     assert "integrity: ok" in health_output
+    assert "integrity.sqlite: ok" in health_output
+    assert "integrity.foreign_keys: ok" in health_output
     assert "files: 2" in health_output
+
+
+def test_health_integrity_failure_returns_nonzero(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    db_path = tmp_path / "graph.sqlite"
+    file_record = FileRecord(
+        path="src/Foo.java",
+        language="java",
+        content_hash="abc123",
+        size_bytes=12,
+        line_count=1,
+    )
+    with GraphStore(db_path) as store:
+        store.apply_schema()
+        repo_id = store.create_repo(repo)
+        snapshot_id = store.create_snapshot(repo_id)
+        store.insert_files(snapshot_id, [file_record])
+        store.upsert_index_stats(snapshot_id, {"files": "1"})
+        store.conn.execute("PRAGMA ignore_check_constraints = ON")
+        store.conn.execute(
+            """
+            INSERT INTO edge(snapshot_id, kind, confidence, weight, extractor)
+            VALUES (?, 'calls', 1.0, 1.0, 'test')
+            """,
+            (snapshot_id,),
+        )
+        store.conn.commit()
+
+    assert (
+        main(["health", "--repo", str(repo), "--db", str(db_path), "--integrity"]) == 1
+    )
+
+    output = capsys.readouterr().out
+    assert "integrity: failed" in output
+    assert "integrity.unresolved_edges: failed (1)" in output
+    assert "integrity.problem." in output
+    assert "edge" in output
 
 
 def test_index_uses_default_db_path_and_rebuild_removes_existing_sidecars(

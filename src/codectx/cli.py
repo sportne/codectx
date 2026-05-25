@@ -156,6 +156,8 @@ def _run_health(args: argparse.Namespace) -> int:
         return 1
 
     _print_health_result(result)
+    if args.integrity and result.integrity != "ok":
+        return 1
     return 0
 
 
@@ -250,6 +252,9 @@ def _print_health_result(result: HealthResult) -> None:
     print(f"snapshot_id: {result.snapshot_id}")
     if result.integrity is not None:
         print(f"integrity: {result.integrity}")
+    if result.integrity_details is not None:
+        for key, value in sorted(result.integrity_details.items()):
+            print(f"integrity.{key}: {value}")
     _print_stats(result.stats)
 
 

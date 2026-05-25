@@ -5,12 +5,58 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Protocol
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 SCHEMA_VERSION = 1
+
+_UNRESOLVED_DST_OPTIONAL_EDGE_KINDS = (
+    "contains",
+    "defines",
+    "declares",
+    "diagnostic_for",
+)
+
+
+@dataclass(frozen=True)
+class IntegrityReport:
+    """Graph integrity status for a persisted snapshot."""
+
+    sqlite: str
+    foreign_keys: str
+    span_ranges: str
+    unresolved_edges: str
+    problems: tuple[str, ...] = ()
+
+    @property
+    def ok(self) -> bool:
+        """Return whether every integrity validation passed."""
+        return (
+            self.sqlite == "ok"
+            and self.foreign_keys == "ok"
+            and self.span_ranges == "ok"
+            and self.unresolved_edges == "ok"
+            and not self.problems
+        )
+
+    def summary(self) -> str:
+        """Return a concise top-level integrity status."""
+        return "ok" if self.ok else "failed"
+
+    def details(self) -> dict[str, str]:
+        """Return stable detail fields suitable for CLI health output."""
+        values = {
+            "sqlite": self.sqlite,
+            "foreign_keys": self.foreign_keys,
+            "spans": self.span_ranges,
+            "unresolved_edges": self.unresolved_edges,
+        }
+        for index, problem in enumerate(self.problems[:10], start=1):
+            values[f"problem.{index}"] = problem
+        return values
 
 
 class _FileRecordLike(Protocol):
@@ -622,6 +668,22 @@ class GraphStore:
         row = self.conn.execute("PRAGMA integrity_check").fetchone()
         return str(row[0]) if row else "unknown"
 
+    def integrity_report(self, snapshot_id: int) -> IntegrityReport:
+        """Validate SQLite and graph-level invariants for a snapshot."""
+        sqlite_status = self.integrity_check()
+        foreign_key_problems = _foreign_key_problems(self.conn)
+        span_problems = _span_range_problems(self.conn, snapshot_id)
+        unresolved_edge_problems = _unresolved_edge_problems(self.conn, snapshot_id)
+        problems = tuple() if sqlite_status == "ok" else (f"sqlite: {sqlite_status}",)
+        problems += foreign_key_problems + span_problems + unresolved_edge_problems
+        return IntegrityReport(
+            sqlite=sqlite_status,
+            foreign_keys=_status_for_problems(foreign_key_problems),
+            span_ranges=_status_for_problems(span_problems),
+            unresolved_edges=_status_for_problems(unresolved_edge_problems),
+            problems=problems,
+        )
+
     def close(self) -> None:
         """Close the underlying SQLite connection."""
         self.conn.close()
@@ -637,6 +699,155 @@ class GraphStore:
         _tb: TracebackType | None,
     ) -> None:
         self.close()
+
+
+def _status_for_problems(problems: tuple[str, ...]) -> str:
+    return "ok" if not problems else f"failed ({len(problems)})"
+
+
+def _foreign_key_problems(conn: sqlite3.Connection) -> tuple[str, ...]:
+    rows = conn.execute("PRAGMA foreign_key_check").fetchall()
+    return tuple(
+        f"foreign key violation: table={row[0]} rowid={row[1]} parent={row[2]} fkid={row[3]}"
+        for row in rows
+    )
+
+
+def _span_range_problems(conn: sqlite3.Connection, snapshot_id: int) -> tuple[str, ...]:
+    problems: list[str] = []
+    checks = (
+        (
+            "node",
+            """
+            SELECT id, file_id, start_byte, end_byte, start_line, end_line
+            FROM node
+            WHERE snapshot_id = ?
+            """,
+        ),
+        (
+            "edge",
+            """
+            SELECT id, file_id, start_byte, end_byte, start_line, end_line
+            FROM edge
+            WHERE snapshot_id = ?
+            """,
+        ),
+        (
+            "diagnostic",
+            """
+            SELECT id, file_id, start_byte, end_byte, start_line, end_line
+            FROM diagnostic
+            WHERE snapshot_id = ?
+            """,
+        ),
+        (
+            "occurrence",
+            """
+            SELECT occurrence.id, occurrence.file_id, occurrence.start_byte,
+                   occurrence.end_byte, occurrence.start_line, occurrence.end_line
+            FROM occurrence
+            JOIN file ON file.id = occurrence.file_id
+            WHERE file.snapshot_id = ?
+            """,
+        ),
+        (
+            "chunk",
+            """
+            SELECT chunk.id, chunk.file_id, NULL AS start_byte, NULL AS end_byte,
+                   chunk.start_line, chunk.end_line
+            FROM chunk
+            JOIN file ON file.id = chunk.file_id
+            WHERE file.snapshot_id = ?
+            """,
+        ),
+    )
+    file_bounds = _file_bounds_by_file_id(conn, snapshot_id)
+    for table, query in checks:
+        for row in conn.execute(query, (snapshot_id,)).fetchall():
+            problems.extend(_span_row_problems(table, row, file_bounds))
+    return tuple(problems)
+
+
+def _file_bounds_by_file_id(
+    conn: sqlite3.Connection, snapshot_id: int
+) -> dict[int, tuple[int, int]]:
+    return {
+        int(row["id"]): (int(row["line_count"]), int(row["size_bytes"]))
+        for row in conn.execute(
+            "SELECT id, line_count, size_bytes FROM file WHERE snapshot_id = ?",
+            (snapshot_id,),
+        ).fetchall()
+    }
+
+
+def _span_row_problems(
+    table: str, row: sqlite3.Row, file_bounds: dict[int, tuple[int, int]]
+) -> list[str]:
+    problems: list[str] = []
+    row_id = int(row["id"])
+    start_byte = _optional_int(row["start_byte"])
+    end_byte = _optional_int(row["end_byte"])
+    start_line = _optional_int(row["start_line"])
+    end_line = _optional_int(row["end_line"])
+    if start_byte is not None and end_byte is not None and start_byte > end_byte:
+        problems.append(f"{table} {row_id} has start_byte after end_byte")
+    if start_byte is not None and start_byte < 0:
+        problems.append(f"{table} {row_id} has negative start_byte")
+    if end_byte is not None and end_byte < 0:
+        problems.append(f"{table} {row_id} has negative end_byte")
+    if start_line is not None and end_line is not None and start_line > end_line:
+        problems.append(f"{table} {row_id} has start_line after end_line")
+    if start_line is not None and start_line < 1:
+        problems.append(f"{table} {row_id} has non-positive start_line")
+    if end_line is not None and end_line < 1:
+        problems.append(f"{table} {row_id} has non-positive end_line")
+    file_id = _optional_int(row["file_id"])
+    if file_id is None:
+        return problems
+    if file_id not in file_bounds:
+        problems.append(f"{table} {row_id} references a file outside the snapshot")
+        return problems
+    line_count, size_bytes = file_bounds[file_id]
+    if start_byte is not None and start_byte > size_bytes:
+        problems.append(f"{table} {row_id} start_byte exceeds file size")
+    if end_byte is not None and end_byte > size_bytes:
+        problems.append(f"{table} {row_id} end_byte exceeds file size")
+    if start_line is not None and start_line > line_count:
+        problems.append(f"{table} {row_id} start_line exceeds file line count")
+    if end_line is not None and end_line > line_count:
+        problems.append(f"{table} {row_id} end_line exceeds file line count")
+    return problems
+
+
+def _unresolved_edge_problems(
+    conn: sqlite3.Connection, snapshot_id: int
+) -> tuple[str, ...]:
+    allowed_kinds = ",".join("?" for _ in _UNRESOLVED_DST_OPTIONAL_EDGE_KINDS)
+    rows = conn.execute(
+        f"""
+        SELECT id, kind
+        FROM edge
+        WHERE snapshot_id = ?
+          AND (
+            (src_node_id IS NULL AND unresolved_src IS NULL)
+            OR (
+              dst_node_id IS NULL
+              AND unresolved_dst IS NULL
+              AND kind NOT IN ({allowed_kinds})
+            )
+          )
+        ORDER BY id
+        """,  # noqa: S608
+        (snapshot_id, *_UNRESOLVED_DST_OPTIONAL_EDGE_KINDS),
+    ).fetchall()
+    return tuple(
+        f"edge {int(row['id'])} has unresolved {str(row['kind'])} endpoint"
+        for row in rows
+    )
+
+
+def _optional_int(value: Any) -> int | None:
+    return None if value is None else int(value)
 
 
 def _metadata_json(metadata: dict[str, Any]) -> str:

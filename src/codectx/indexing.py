@@ -41,6 +41,7 @@ class HealthResult:
     snapshot_id: int
     stats: dict[str, str]
     integrity: str | None = None
+    integrity_details: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -132,7 +133,12 @@ def read_health(
                 f"No index health stats found for {repo_path}. "
                 f"Run `codectx index {repo_path} --rebuild`."
             )
-        integrity = store.integrity_check() if include_integrity else None
+        integrity = None
+        integrity_details = None
+        if include_integrity:
+            integrity_report = store.integrity_report(snapshot_id)
+            integrity = integrity_report.summary()
+            integrity_details = integrity_report.details()
 
     return HealthResult(
         repo=repo_path,
@@ -140,6 +146,7 @@ def read_health(
         snapshot_id=snapshot_id,
         stats=stats,
         integrity=integrity,
+        integrity_details=integrity_details,
     )
 
 

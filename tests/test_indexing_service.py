@@ -45,6 +45,12 @@ def test_run_index_and_read_health_round_trip(tmp_path: Path) -> None:
     assert health_result.snapshot_id == index_result.snapshot_id
     assert health_result.stats == index_result.stats
     assert health_result.integrity == "ok"
+    assert health_result.integrity_details == {
+        "foreign_keys": "ok",
+        "spans": "ok",
+        "sqlite": "ok",
+        "unresolved_edges": "ok",
+    }
 
 
 def test_default_frontends_register_java_and_cpp() -> None:
