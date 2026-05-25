@@ -177,6 +177,87 @@ def test_cpp_frontend_extracts_occurrences_and_chunks() -> None:
     assert "int helper(int count)" in helper_chunk.text
 
 
+def test_cpp_frontend_extracts_call_like_occurrences_and_edges() -> None:
+    frontend = CppTreeSitterFrontend()
+    source = b"""namespace acme {
+bool authorize(User user) {
+    validate(user);
+    return gateway.charge(user);
+}
+bool validate(User user) { return true; }
+class Service {
+    bool run() { return authorize(user); }
+};
+}
+"""
+
+    facts = frontend.extract("src/payment.cpp", source)
+
+    call_occurrences = [
+        occurrence for occurrence in facts.occurrences if occurrence.role == "call"
+    ]
+    assert [
+        (occurrence.text, occurrence.resolved_key) for occurrence in call_occurrences
+    ] == [
+        ("validate", "cpp:src/payment.cpp#acme::validate(User)"),
+        ("gateway.charge", None),
+        ("authorize", "cpp:src/payment.cpp#acme::authorize(User)"),
+    ]
+    assert {
+        (occurrence.node_key, occurrence.span.start_line)
+        for occurrence in call_occurrences
+    } == {
+        ("cpp:src/payment.cpp#acme::authorize(User)", 3),
+        ("cpp:src/payment.cpp#acme::authorize(User)", 4),
+        ("cpp:src/payment.cpp#acme::Service::run()", 8),
+    }
+
+    call_edges = [edge for edge in facts.edges if edge.kind == "calls"]
+    assert [(edge.dst_key, edge.unresolved_dst) for edge in call_edges] == [
+        ("cpp:src/payment.cpp#acme::validate(User)", None),
+        (None, "gateway.charge"),
+        ("cpp:src/payment.cpp#acme::authorize(User)", None),
+    ]
+    assert [edge.metadata["argument_count"] for edge in call_edges] == [1, 1, 1]
+
+
+def test_cpp_frontend_leaves_ambiguous_same_scope_calls_unresolved() -> None:
+    frontend = CppTreeSitterFrontend()
+    source = b"""void target() {
+    overloaded(value);
+}
+void overloaded(int value) {}
+void overloaded(long value) {}
+"""
+
+    facts = frontend.extract("src/foo.cpp", source)
+
+    call_edge = next(edge for edge in facts.edges if edge.kind == "calls")
+    assert call_edge.dst_key is None
+    assert call_edge.unresolved_dst == "overloaded"
+    assert call_edge.confidence == 0.45
+
+
+def test_cpp_frontend_does_not_resolve_shadowed_callable_names() -> None:
+    frontend = CppTreeSitterFrontend()
+    source = b"""void helper() {}
+void local() {}
+void target(void (*helper)()) {
+    helper();
+    auto local = [](){};
+    local();
+}
+"""
+
+    facts = frontend.extract("src/foo.cpp", source)
+
+    call_edges = [edge for edge in facts.edges if edge.kind == "calls"]
+    assert [(edge.dst_key, edge.unresolved_dst) for edge in call_edges] == [
+        (None, "helper"),
+        (None, "local"),
+    ]
+
+
 def test_cpp_frontend_uses_signatures_for_overloaded_callables() -> None:
     frontend = CppTreeSitterFrontend()
 

@@ -863,7 +863,7 @@ Acceptance:
 
 ### T061 — Extract C++ call-like occurrences
 
-Status: todo
+Status: done
 
 Depends on: T034, T035
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import tree_sitter_cpp
 from tree_sitter import Node, Parser
 
@@ -46,12 +48,14 @@ class CppTreeSitterFrontend:
         edges: list[EdgeFact] = []
         occurrences: list[OccurrenceFact] = []
         chunks: list[ChunkFact] = []
+        callable_index = _callable_resolution_index(parsed.root, source)
 
         _extract_children(
             file_path=file_path,
             source=source,
             parent=parsed.root,
             scope=(),
+            callable_index=callable_index,
             nodes=nodes,
             edges=edges,
             occurrences=occurrences,
@@ -103,6 +107,7 @@ def _extract_children(
     source: bytes,
     parent: Node,
     scope: tuple[str, ...],
+    callable_index: dict[tuple[tuple[str, ...], str, int], str],
     nodes: list[NodeFact],
     edges: list[EdgeFact],
     occurrences: list[OccurrenceFact],
@@ -117,6 +122,7 @@ def _extract_children(
                 source=source,
                 node=child,
                 scope=scope,
+                callable_index=callable_index,
                 nodes=nodes,
                 edges=edges,
                 occurrences=occurrences,
@@ -128,6 +134,7 @@ def _extract_children(
                 source=source,
                 node=child,
                 scope=scope,
+                callable_index=callable_index,
                 nodes=nodes,
                 edges=edges,
                 occurrences=occurrences,
@@ -139,6 +146,7 @@ def _extract_children(
                 source=source,
                 node=child,
                 scope=scope,
+                callable_index=callable_index,
                 nodes=nodes,
                 edges=edges,
                 occurrences=occurrences,
@@ -210,6 +218,7 @@ def _extract_namespace(
     source: bytes,
     node: Node,
     scope: tuple[str, ...],
+    callable_index: dict[tuple[tuple[str, ...], str, int], str],
     nodes: list[NodeFact],
     edges: list[EdgeFact],
     occurrences: list[OccurrenceFact],
@@ -256,6 +265,7 @@ def _extract_namespace(
             source=source,
             parent=body,
             scope=(*scope, name),
+            callable_index=callable_index,
             nodes=nodes,
             edges=edges,
             occurrences=occurrences,
@@ -269,6 +279,7 @@ def _extract_type(
     source: bytes,
     node: Node,
     scope: tuple[str, ...],
+    callable_index: dict[tuple[tuple[str, ...], str, int], str],
     nodes: list[NodeFact],
     edges: list[EdgeFact],
     occurrences: list[OccurrenceFact],
@@ -316,6 +327,7 @@ def _extract_type(
             source=source,
             parent=body,
             scope=(*scope, name),
+            callable_index=callable_index,
             nodes=nodes,
             edges=edges,
             occurrences=occurrences,
@@ -329,6 +341,7 @@ def _extract_type_members(
     source: bytes,
     parent: Node,
     scope: tuple[str, ...],
+    callable_index: dict[tuple[tuple[str, ...], str, int], str],
     nodes: list[NodeFact],
     edges: list[EdgeFact],
     occurrences: list[OccurrenceFact],
@@ -341,6 +354,7 @@ def _extract_type_members(
                 source=source,
                 node=child,
                 scope=scope,
+                callable_index=callable_index,
                 nodes=nodes,
                 edges=edges,
                 occurrences=occurrences,
@@ -352,6 +366,7 @@ def _extract_type_members(
                 source=source,
                 node=child,
                 scope=scope,
+                callable_index=callable_index,
                 nodes=nodes,
                 edges=edges,
                 occurrences=occurrences,
@@ -365,6 +380,7 @@ def _extract_type_members(
                     source=source,
                     node=child,
                     scope=scope,
+                    callable_index=callable_index,
                     nodes=nodes,
                     edges=edges,
                     occurrences=occurrences,
@@ -383,6 +399,7 @@ def _extract_callable(
     source: bytes,
     node: Node,
     scope: tuple[str, ...],
+    callable_index: dict[tuple[tuple[str, ...], str, int], str],
     nodes: list[NodeFact],
     edges: list[EdgeFact],
     occurrences: list[OccurrenceFact],
@@ -431,6 +448,268 @@ def _extract_callable(
     )
     if scope:
         edges.append(_contains_edge(file_path, source, scope, qualified_name, node))
+    _extract_call_like_occurrences(
+        file_path=file_path,
+        source=source,
+        node=node,
+        scope=scope,
+        source_key=key,
+        callable_index=callable_index,
+        shadowed_names=_call_shadow_names(node, declarator, source),
+        edges=edges,
+        occurrences=occurrences,
+    )
+
+
+def _callable_resolution_index(
+    root: Node, source: bytes
+) -> dict[tuple[tuple[str, ...], str, int], str]:
+    candidates: dict[tuple[tuple[str, ...], str, int], list[str]] = {}
+    _collect_callable_candidates(root, source, (), candidates)
+    return {key: keys[0] for key, keys in candidates.items() if len(keys) == 1}
+
+
+def _collect_callable_candidates(
+    parent: Node,
+    source: bytes,
+    scope: tuple[str, ...],
+    candidates: dict[tuple[tuple[str, ...], str, int], list[str]],
+) -> None:
+    for child in parent.named_children:
+        if child.type == "namespace_definition":
+            name_node = _namespace_name_node(child)
+            child_scope = (
+                (*scope, node_text(source, name_node))
+                if name_node is not None
+                else scope
+            )
+            body = first_child_by_field_name(child, "body")
+            if body is not None:
+                _collect_callable_candidates(body, source, child_scope, candidates)
+        elif _is_type_node(child):
+            name_node = _type_name_node(child)
+            child_scope = (
+                (*scope, node_text(source, name_node))
+                if name_node is not None
+                else scope
+            )
+            body = first_child_by_field_name(child, "body")
+            if body is not None:
+                _collect_callable_candidates(body, source, child_scope, candidates)
+        elif child.type in {"declaration", "function_definition"}:
+            declarator = _function_declarator(child)
+            if declarator is None:
+                continue
+            name_node = _declarator_name_node(declarator)
+            if name_node is None:
+                continue
+            name = node_text(source, name_node)
+            signature = _callable_signature(declarator, source)
+            qualified_name = _qualified_callable_name(scope, name, signature)
+            simple_name = name.split("::")[-1]
+            candidates.setdefault(
+                (scope, simple_name, _argument_count_for_parameters(declarator)),
+                [],
+            ).append(_symbol_key("", qualified_name))
+
+
+def _extract_call_like_occurrences(
+    *,
+    file_path: str,
+    source: bytes,
+    node: Node,
+    scope: tuple[str, ...],
+    source_key: str,
+    callable_index: dict[tuple[tuple[str, ...], str, int], str],
+    shadowed_names: set[str],
+    edges: list[EdgeFact],
+    occurrences: list[OccurrenceFact],
+) -> None:
+    if node.type != "function_definition":
+        return
+    for call in _call_like_nodes(node):
+        call_info = _call_info(file_path, source, call)
+        if call_info is None:  # pragma: no cover - defensive for malformed calls
+            continue
+        text, text_span, argument_count, simple_name, is_simple = call_info
+        resolved_key = (
+            _resolve_call_key(
+                file_path, callable_index, scope, simple_name, argument_count
+            )
+            if is_simple and simple_name not in shadowed_names
+            else None
+        )
+        confidence = 0.75 if resolved_key is not None else 0.45
+        occurrences.append(
+            OccurrenceFact(
+                file_path=file_path,
+                role="call",
+                text=text,
+                span=text_span,
+                node_key=source_key,
+                resolved_key=resolved_key,
+                confidence=confidence,
+                extractor=EXTRACTOR,
+                metadata={
+                    "argument_count": argument_count,
+                    "call_kind": call.type,
+                },
+            )
+        )
+        edges.append(
+            EdgeFact(
+                kind="calls",
+                src_key=source_key,
+                dst_key=resolved_key,
+                unresolved_src=None,
+                unresolved_dst=None if resolved_key is not None else text,
+                file_path=file_path,
+                span=node_span(file_path, source, call),
+                confidence=confidence,
+                extractor=EXTRACTOR,
+                metadata={
+                    "argument_count": argument_count,
+                    "call_kind": call.type,
+                    "call_text": text,
+                },
+            )
+        )
+
+
+def _call_like_nodes(node: Node) -> Iterator[Node]:
+    for child in node.named_children:
+        if child.type == "call_expression":
+            yield child
+            continue
+        if _is_type_node(child):
+            continue
+        yield from _call_like_nodes(child)
+
+
+def _call_info(
+    file_path: str, source: bytes, node: Node
+) -> tuple[str, SourceSpan, int, str, bool] | None:
+    function_node = first_child_by_field_name(node, "function")
+    arguments = first_child_by_field_name(node, "arguments")
+    if function_node is None or arguments is None:  # pragma: no cover - defensive
+        return None
+    text = node_text(source, function_node)
+    simple_name = text.split("::")[-1].split(".")[-1].split("->")[-1]
+    return (
+        text,
+        node_span(file_path, source, function_node),
+        _argument_count(arguments),
+        simple_name,
+        function_node.type == "identifier",
+    )
+
+
+def _resolve_call_key(
+    file_path: str,
+    callable_index: dict[tuple[tuple[str, ...], str, int], str],
+    scope: tuple[str, ...],
+    simple_name: str,
+    argument_count: int,
+) -> str | None:
+    for candidate_scope in _scope_resolution_order(scope):
+        key = callable_index.get((candidate_scope, simple_name, argument_count))
+        if key is not None:
+            return _replace_symbol_key_file(key, file_path)
+    return None
+
+
+def _scope_resolution_order(scope: tuple[str, ...]) -> Iterator[tuple[str, ...]]:
+    current = scope
+    while True:
+        yield current
+        if not current:
+            break
+        current = current[:-1]
+
+
+def _argument_count(arguments: Node) -> int:
+    return len(arguments.named_children)
+
+
+def _argument_count_for_parameters(declarator: Node) -> int:
+    parameters = next(
+        (
+            child
+            for child in declarator.named_children
+            if child.type == "parameter_list"
+        ),
+        None,
+    )
+    if parameters is None:  # pragma: no cover - defensive for malformed callables
+        return 0
+    return sum(
+        1
+        for parameter in parameters.named_children
+        if parameter.type == "parameter_declaration"
+    )
+
+
+def _call_shadow_names(node: Node, declarator: Node, source: bytes) -> set[str]:
+    return {
+        *_parameter_names(declarator, source),
+        *_local_declaration_names(node, source),
+    }
+
+
+def _parameter_names(declarator: Node, source: bytes) -> set[str]:
+    parameters = next(
+        (
+            child
+            for child in declarator.named_children
+            if child.type == "parameter_list"
+        ),
+        None,
+    )
+    if parameters is None:
+        return set()
+    names: set[str] = set()
+    for parameter in parameters.named_children:
+        if parameter.type != "parameter_declaration":
+            continue
+        name_node = _last_identifier(parameter)
+        if name_node is not None:
+            names.add(node_text(source, name_node).split("::")[-1])
+    return names
+
+
+def _local_declaration_names(node: Node, source: bytes) -> set[str]:
+    names: set[str] = set()
+    for child in node.named_children:
+        if child.type == "declaration" and _function_declarator(child) is None:
+            names.update(
+                node_text(source, name_node).split("::")[-1]
+                for name_node in _identifier_nodes(child)
+            )
+            continue
+        if child.type in {"function_definition", "lambda_expression"}:
+            continue
+        names.update(_local_declaration_names(child, source))
+    return names
+
+
+def _last_identifier(node: Node) -> Node | None:
+    identifiers = list(_identifier_nodes(node))
+    if not identifiers:
+        return None
+    return identifiers[-1]
+
+
+def _identifier_nodes(node: Node) -> Iterator[Node]:
+    for child in node.named_children:
+        if child.type in {"identifier", "field_identifier"}:
+            yield child
+        else:
+            yield from _identifier_nodes(child)
+
+
+def _replace_symbol_key_file(symbol_key: str, file_path: str) -> str:
+    _, qualified_name = symbol_key.split("#", 1)
+    return _symbol_key(file_path, qualified_name)
 
 
 def _extract_fields(
