@@ -1292,7 +1292,7 @@ Acceptance:
 
 ### T095 — Manual validation on real repositories
 
-Status: todo
+Status: done
 
 Depends on: T093
 
