@@ -724,7 +724,7 @@ Acceptance:
 
 ### T052 — Implement Markdown formatter
 
-Status: todo
+Status: done
 
 Depends on: T050, T051
 
