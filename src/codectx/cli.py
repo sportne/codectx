@@ -18,7 +18,8 @@ from codectx.indexing import (
     run_index,
 )
 from codectx.neighborhooding import (
-    NeighborhoodPlaceholderResult,
+    NeighborhoodError,
+    NeighborhoodResult,
     build_neighborhood,
 )
 from codectx.querying import (
@@ -89,6 +90,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_neighborhood.add_argument("--db", type=Path, default=None)
     p_neighborhood.add_argument("--symbol", required=True)
     p_neighborhood.add_argument("--depth", type=int, default=1)
+    p_neighborhood.add_argument(
+        "--direction", choices=["out", "in", "both"], default="out"
+    )
+    p_neighborhood.add_argument(
+        "--edge-kind",
+        action="append",
+        default=None,
+        help="Restrict traversal to an edge kind. Can be repeated.",
+    )
+    p_neighborhood.add_argument("--limit", type=int, default=50)
 
     p_node = sub.add_parser("inspect-node", help="Inspect a graph node by id.")
     p_node.add_argument("node_id", type=int)
@@ -154,8 +165,15 @@ def _run_neighborhood(args: argparse.Namespace) -> int:
         args.symbol,
         db_path=args.db,
         depth=args.depth,
+        direction=args.direction,
+        edge_kinds=tuple(args.edge_kind) if args.edge_kind else None,
+        limit=args.limit,
     )
-    _print_neighborhood_placeholder_result(result)
+    if isinstance(result, NeighborhoodError):
+        print(result.message)
+        return 1
+
+    _print_neighborhood_result(result)
     return 0
 
 
@@ -240,10 +258,33 @@ def _print_stats(stats: dict[str, str]) -> None:
         print(f"{key}: {value}")
 
 
-def _print_neighborhood_placeholder_result(
-    result: NeighborhoodPlaceholderResult,
-) -> None:
-    print(result.message)
+def _print_neighborhood_result(result: NeighborhoodResult) -> None:
+    print(f"Neighborhood for {result.symbol}:")
+    print(f"seed_node_id: {result.seed_node_id}")
+    print("nodes:")
+    for node in result.nodes:
+        label = node.qualified_name or node.name or node.symbol_key or "<unnamed>"
+        location = _format_location(node.file_path, node.start_line, node.end_line)
+        language = f" {node.language}" if node.language else ""
+        print(
+            f"- depth={node.depth} id={node.node_id} "
+            f"{node.kind}{language} {label} {location} "
+            f"confidence={node.confidence:g} extractor={node.extractor}"
+        )
+    print("edges:")
+    if not result.edges:
+        print("- none")
+    for edge in result.edges:
+        location = _format_location(edge.file_path, edge.start_line, edge.end_line)
+        print(
+            f"- depth={edge.depth} id={edge.edge_id} kind={edge.kind} "
+            f"src={_format_optional_id(edge.src_node_id)} "
+            f"dst={_format_optional_id(edge.dst_node_id)} "
+            f"unresolved_src={_format_optional(edge.unresolved_src)} "
+            f"unresolved_dst={_format_optional(edge.unresolved_dst)} "
+            f"{location} confidence={edge.confidence:g} "
+            f"weight={edge.weight:g} extractor={edge.extractor}"
+        )
 
 
 def _print_context_result(result: ContextResult) -> None:
@@ -372,6 +413,10 @@ def _format_byte_span(start_byte: int | None, end_byte: int | None) -> str:
 
 def _format_optional(value: str | None) -> str:
     return "<none>" if value is None else value
+
+
+def _format_optional_id(value: int | None) -> str:
+    return "<none>" if value is None else str(value)
 
 
 def _format_metadata(metadata: dict[str, object]) -> str:

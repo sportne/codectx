@@ -908,7 +908,7 @@ Acceptance:
 
 ### T063 — Implement bounded graph neighborhood query
 
-Status: todo
+Status: done
 
 Depends on: T060, T061, T062
 

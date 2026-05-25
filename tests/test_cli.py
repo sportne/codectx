@@ -8,7 +8,8 @@ from codectx.cli import build_parser, main
 from codectx.contexting import ContextResult
 from codectx.frontends.base import EdgeFact, NodeFact
 from codectx.graph.store import GraphStore
-from codectx.neighborhooding import NeighborhoodPlaceholderResult
+from codectx.graph.traversal import NeighborhoodEdge, NeighborhoodNode
+from codectx.neighborhooding import NeighborhoodResult
 from codectx.scanner.models import FileRecord
 from codectx.source.spans import SourceSpan
 
@@ -25,7 +26,19 @@ def test_parser_accepts_all_initial_commands() -> None:
         == "context"
     )
     assert (
-        parser.parse_args(["neighborhood", "--symbol", "PaymentService"]).command
+        parser.parse_args(
+            [
+                "neighborhood",
+                "--symbol",
+                "PaymentService",
+                "--direction",
+                "both",
+                "--edge-kind",
+                "calls",
+                "--limit",
+                "5",
+            ]
+        ).command
         == "neighborhood"
     )
     assert parser.parse_args(["inspect-node", "123"]).command == "inspect-node"
@@ -44,23 +57,54 @@ def test_parser_version_exits_with_package_version(
     assert "codectx 0.0.1" in capsys.readouterr().out
 
 
-def test_main_reports_defined_but_unimplemented_command(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    assert main(["neighborhood", "--symbol", "PaymentService"]) == 0
-
-    output = capsys.readouterr().out
-    assert (
-        "codectx command 'neighborhood' is defined but not implemented yet." in output
-    )
-    assert "docs/04-task-decomposition.md" in output
-
-
 def test_neighborhood_command_delegates_to_neighborhood_service(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    def fake_build_neighborhood(*_args, **_kwargs):
-        return NeighborhoodPlaceholderResult(message="neighborhood service result")
+    captured = {}
+
+    def fake_build_neighborhood(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return NeighborhoodResult(
+            repo=tmp_path,
+            db_path=tmp_path / "graph.sqlite",
+            snapshot_id=1,
+            symbol="PaymentService",
+            seed_node_id=10,
+            nodes=[
+                NeighborhoodNode(
+                    node_id=10,
+                    depth=0,
+                    kind="callable",
+                    language="java",
+                    name="authorize",
+                    qualified_name="PaymentService.authorize",
+                    symbol_key="java:src/PaymentService.java#PaymentService.authorize()",
+                    file_path="src/PaymentService.java",
+                    start_line=3,
+                    end_line=5,
+                    confidence=1.0,
+                    extractor="test",
+                )
+            ],
+            edges=[
+                NeighborhoodEdge(
+                    edge_id=20,
+                    depth=1,
+                    kind="calls",
+                    src_node_id=10,
+                    dst_node_id=None,
+                    unresolved_src=None,
+                    unresolved_dst="gateway.charge",
+                    file_path="src/PaymentService.java",
+                    start_line=4,
+                    end_line=4,
+                    confidence=0.45,
+                    weight=1.0,
+                    extractor="test",
+                )
+            ],
+        )
 
     monkeypatch.setattr("codectx.cli.build_neighborhood", fake_build_neighborhood)
 
@@ -74,12 +118,32 @@ def test_neighborhood_command_delegates_to_neighborhood_service(
                 str(tmp_path),
                 "--depth",
                 "2",
+                "--direction",
+                "both",
+                "--edge-kind",
+                "calls",
+                "--limit",
+                "5",
             ]
         )
         == 0
     )
 
-    assert capsys.readouterr().out == "neighborhood service result\n"
+    output = capsys.readouterr().out
+    assert "Neighborhood for PaymentService:" in output
+    assert "seed_node_id: 10" in output
+    assert "PaymentService.authorize src/PaymentService.java:3-5" in output
+    assert "unresolved_dst=gateway.charge" in output
+    assert captured == {
+        "args": (tmp_path, "PaymentService"),
+        "kwargs": {
+            "db_path": None,
+            "depth": 2,
+            "direction": "both",
+            "edge_kinds": ("calls",),
+            "limit": 5,
+        },
+    }
 
 
 def test_context_command_delegates_to_context_service(
