@@ -17,15 +17,17 @@ from codectx.indexing import (
     read_health,
     run_index,
 )
+from codectx.neighborhooding import (
+    NeighborhoodPlaceholderResult,
+    build_neighborhood,
+)
 from codectx.querying import (
     EdgeInspectionResult,
     NodeInspectionResult,
-    PlaceholderResult,
     SearchResult,
     SymbolSearchResult,
     inspect_edge,
     inspect_node,
-    placeholder_result,
     search,
     search_symbols,
 )
@@ -121,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "context":
         return _run_context(args)
     if args.command == "neighborhood":
-        return _run_query_placeholder(args)
+        return _run_neighborhood(args)
 
     raise AssertionError(f"unhandled command: {args.command}")
 
@@ -146,9 +148,14 @@ def _run_health(args: argparse.Namespace) -> int:
     return 0
 
 
-def _run_query_placeholder(args: argparse.Namespace) -> int:
-    result = placeholder_result(args.command)
-    _print_placeholder_result(result)
+def _run_neighborhood(args: argparse.Namespace) -> int:
+    result = build_neighborhood(
+        args.repo,
+        args.symbol,
+        db_path=args.db,
+        depth=args.depth,
+    )
+    _print_neighborhood_placeholder_result(result)
     return 0
 
 
@@ -233,7 +240,9 @@ def _print_stats(stats: dict[str, str]) -> None:
         print(f"{key}: {value}")
 
 
-def _print_placeholder_result(result: PlaceholderResult) -> None:
+def _print_neighborhood_placeholder_result(
+    result: NeighborhoodPlaceholderResult,
+) -> None:
     print(result.message)
 
 

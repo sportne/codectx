@@ -816,6 +816,28 @@ Acceptance:
 
 ## M6 — References, call-like edges, and neighborhoods
 
+### T059 — Add internal neighborhood service
+
+Status: done
+
+Depends on: T055
+
+Requirement coverage: FR-044, FR-104
+
+Work:
+
+- Add a CLI-facing neighborhood service.
+- Keep `cli.py` responsible for argument parsing and printing.
+- Preserve placeholder behavior until bounded traversal is implemented.
+
+Deliverable:
+
+- `neighborhooding.py` service boundary for the neighborhood command.
+
+Acceptance:
+
+- `codectx neighborhood --symbol X` delegates through the service.
+
 ### T060 — Extract Java call-like occurrences
 
 Status: todo

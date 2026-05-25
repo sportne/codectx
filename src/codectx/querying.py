@@ -38,13 +38,6 @@ class QueryingError:
 
 
 @dataclass(frozen=True)
-class PlaceholderResult:
-    """Placeholder response for query commands not implemented in this milestone step."""
-
-    message: str
-
-
-@dataclass(frozen=True)
 class SymbolSearchResult:
     """Symbol search response for CLI rendering."""
 
@@ -279,13 +272,3 @@ def _repo_relative_path(repo: Path, file_path: str | Path) -> str:
         except ValueError:
             return path.as_posix()
     return path.as_posix()
-
-
-def placeholder_result(command: str) -> PlaceholderResult:
-    """Return the current placeholder response for an unimplemented query command."""
-    return PlaceholderResult(
-        message=(
-            f"codectx command '{command}' is defined but not implemented yet.\n"
-            "See docs/04-task-decomposition.md for the ordered MVP task plan."
-        )
-    )

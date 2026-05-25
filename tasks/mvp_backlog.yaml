@@ -89,6 +89,8 @@ milestones:
   - id: M6
     name: References, call-like edges, and neighborhoods
     tasks:
+      - id: T059
+        status: done
       - id: T060
         status: todo
       - id: T061

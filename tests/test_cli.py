@@ -8,6 +8,7 @@ from codectx.cli import build_parser, main
 from codectx.contexting import ContextResult
 from codectx.frontends.base import EdgeFact, NodeFact
 from codectx.graph.store import GraphStore
+from codectx.neighborhooding import NeighborhoodPlaceholderResult
 from codectx.scanner.models import FileRecord
 from codectx.source.spans import SourceSpan
 
@@ -53,6 +54,32 @@ def test_main_reports_defined_but_unimplemented_command(
         "codectx command 'neighborhood' is defined but not implemented yet." in output
     )
     assert "docs/04-task-decomposition.md" in output
+
+
+def test_neighborhood_command_delegates_to_neighborhood_service(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def fake_build_neighborhood(*_args, **_kwargs):
+        return NeighborhoodPlaceholderResult(message="neighborhood service result")
+
+    monkeypatch.setattr("codectx.cli.build_neighborhood", fake_build_neighborhood)
+
+    assert (
+        main(
+            [
+                "neighborhood",
+                "--symbol",
+                "PaymentService",
+                "--repo",
+                str(tmp_path),
+                "--depth",
+                "2",
+            ]
+        )
+        == 0
+    )
+
+    assert capsys.readouterr().out == "neighborhood service result\n"
 
 
 def test_context_command_delegates_to_context_service(

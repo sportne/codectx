@@ -5,10 +5,8 @@ from pathlib import Path
 from codectx.graph.store import GraphStore
 from codectx.querying import (
     FileLineAnchorResult,
-    PlaceholderResult,
     QueryContext,
     QueryingError,
-    placeholder_result,
     resolve_anchor,
     resolve_query_context,
 )
@@ -55,16 +53,6 @@ def test_resolve_query_context_reports_db_without_repo_snapshot(tmp_path: Path) 
 
     assert isinstance(result, QueryingError)
     assert f"No codectx index found for {repo.resolve()}" in result.message
-
-
-def test_placeholder_result_is_query_service_response() -> None:
-    result = placeholder_result("symbols")
-
-    assert isinstance(result, PlaceholderResult)
-    assert "codectx command 'symbols' is defined but not implemented yet." in (
-        result.message
-    )
-    assert "docs/04-task-decomposition.md" in result.message
 
 
 def test_resolve_anchor_returns_file_line_anchor(tmp_path: Path) -> None:
