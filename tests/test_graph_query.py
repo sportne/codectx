@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
-from codectx.frontends.base import NodeFact
-from codectx.graph.query import search_symbols
+import codectx.graph.query as graph_query
+from codectx.frontends.base import ChunkFact, NodeFact
+from codectx.graph.query import (
+    search,
+    search_chunks_like,
+    search_symbols,
+)
 from codectx.graph.store import GraphStore
 from codectx.scanner.models import FileRecord
 from codectx.source.spans import SourceSpan
@@ -73,6 +79,91 @@ def test_search_symbols_treats_like_wildcards_as_literal_text(tmp_path: Path) ->
     assert [result.name for result in percent_results] == ["Percent%Helper"]
 
 
+def test_search_chunks_like_returns_matching_chunks(tmp_path: Path) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_symbols(store, tmp_path)
+
+        results = search_chunks_like(store.conn, snapshot_id, "authorize")
+
+    assert len(results) == 1
+    assert results[0].file_path == "src/PaymentService.java"
+    assert results[0].start_line == 1
+    assert "authorizePayment" in results[0].text
+
+
+def test_search_uses_like_when_fts_tables_are_absent(tmp_path: Path) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_symbols(store, tmp_path)
+
+        result = search(store.conn, snapshot_id, "authorize")
+
+    assert result.used_fts is False
+    assert [symbol.name for symbol in result.symbols] == ["authorizePayment"]
+    assert [chunk.file_path for chunk in result.chunks] == ["src/PaymentService.java"]
+
+
+def test_configure_fts_populates_optional_tables_when_available(tmp_path: Path) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_symbols(store, tmp_path)
+
+        enabled = store.configure_fts(snapshot_id)
+        result = search(store.conn, snapshot_id, "authorize")
+
+    with GraphStore(db_path) as probe_store:
+        expected_enabled = probe_store.has_fts5()
+
+    assert enabled is expected_enabled
+    if enabled:
+        assert result.used_fts is True
+        assert [symbol.name for symbol in result.symbols] == ["authorizePayment"]
+        assert [chunk.file_path for chunk in result.chunks] == [
+            "src/PaymentService.java"
+        ]
+
+
+def test_configure_fts_returns_false_when_fts_is_unavailable(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_symbols(store, tmp_path)
+        monkeypatch.setattr(GraphStore, "has_fts5", lambda _store: False)
+
+        enabled = store.configure_fts(snapshot_id)
+        fts_tables = store.conn.execute(
+            """
+            SELECT name FROM sqlite_master
+            WHERE type = 'table' AND name IN ('symbol_fts', 'chunk_fts')
+            """
+        ).fetchall()
+
+    assert enabled is False
+    assert fts_tables == []
+
+
+def test_search_falls_back_to_like_when_fts_query_fails(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_symbols(store, tmp_path)
+        if not store.configure_fts(snapshot_id):
+            return
+
+        def raise_fts_error(*_args, **_kwargs):
+            raise sqlite3.OperationalError("simulated missing fts")
+
+        monkeypatch.setattr(graph_query, "_search_symbols_fts", raise_fts_error)
+        result = search(store.conn, snapshot_id, "authorize")
+
+    assert result.used_fts is False
+    assert [symbol.name for symbol in result.symbols] == ["authorizePayment"]
+    assert [chunk.file_path for chunk in result.chunks] == ["src/PaymentService.java"]
+
+
 def _seed_symbols(store: GraphStore, repo: Path) -> int:
     store.apply_schema()
     repo_id = store.create_repo(repo)
@@ -117,7 +208,7 @@ def _seed_symbols(store: GraphStore, repo: Path) -> int:
         end_line=3,
         end_col=1,
     )
-    store.insert_nodes(
+    node_ids = store.insert_nodes(
         snapshot_id,
         [
             NodeFact(
@@ -194,5 +285,21 @@ def _seed_symbols(store: GraphStore, repo: Path) -> int:
             ),
         ],
         file_ids,
+    )
+    store.insert_chunks(
+        [
+            ChunkFact(
+                file_path="src/PaymentService.java",
+                node_key="java:src/PaymentService.java#Authorizer.authorizePayment",
+                kind="definition",
+                start_line=1,
+                end_line=3,
+                text="void authorizePayment() {}",
+                token_estimate=6,
+                metadata={},
+            )
+        ],
+        file_ids,
+        node_ids,
     )
     return snapshot_id

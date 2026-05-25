@@ -42,10 +42,12 @@ def test_parser_version_exits_with_package_version(
 def test_main_reports_defined_but_unimplemented_command(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert main(["search", "PaymentService"]) == 0
+    assert main(["neighborhood", "--symbol", "PaymentService"]) == 0
 
     output = capsys.readouterr().out
-    assert "codectx command 'search' is defined but not implemented yet." in output
+    assert (
+        "codectx command 'neighborhood' is defined but not implemented yet." in output
+    )
     assert "docs/04-task-decomposition.md" in output
 
 
@@ -205,6 +207,68 @@ def test_symbols_command_reports_missing_index(
         main(
             [
                 "symbols",
+                "Foo",
+                "--repo",
+                str(repo),
+                "--db",
+                str(tmp_path / "missing.sqlite"),
+            ]
+        )
+        == 1
+    )
+
+    output = capsys.readouterr().out
+    assert "No codectx index found" in output
+    assert "codectx index" in output
+
+
+def test_search_command_displays_symbol_and_chunk_matches(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    _write(
+        repo / "src" / "PaymentService.java",
+        "package acme;\nclass PaymentService { void authorize() {} }\n",
+    )
+    db_path = tmp_path / "graph.sqlite"
+    assert main(["index", str(repo), "--db", str(db_path)]) == 0
+    capsys.readouterr()
+
+    assert main(["search", "authorize", "--repo", str(repo), "--db", str(db_path)]) == 0
+
+    output = capsys.readouterr().out
+    assert "Search results for authorize" in output
+    assert "symbols:" in output
+    assert "chunks:" in output
+    assert "acme.PaymentService.authorize()" in output
+    assert "src/PaymentService.java" in output
+
+
+def test_search_command_reports_no_matches(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    _write(repo / "src" / "Foo.java", "class Foo {}\n")
+    db_path = tmp_path / "graph.sqlite"
+    assert main(["index", str(repo), "--db", str(db_path)]) == 0
+    capsys.readouterr()
+
+    assert main(["search", "Missing", "--repo", str(repo), "--db", str(db_path)]) == 0
+
+    output = capsys.readouterr().out
+    assert "No results found for Missing." in output
+
+
+def test_search_command_reports_missing_index(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    assert (
+        main(
+            [
+                "search",
                 "Foo",
                 "--repo",
                 str(repo),

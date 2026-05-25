@@ -533,6 +533,70 @@ class GraphStore:
             ).fetchall()
         }
 
+    def has_fts5(self) -> bool:
+        """Return whether the active SQLite connection supports FTS5."""
+        try:
+            self.conn.execute(
+                "CREATE VIRTUAL TABLE temp.codectx_fts_probe USING fts5(value)"
+            )
+            self.conn.execute("DROP TABLE temp.codectx_fts_probe")
+        except sqlite3.OperationalError:
+            return False
+        return True
+
+    def configure_fts(self, snapshot_id: int) -> bool:
+        """Create and populate optional FTS tables for a snapshot."""
+        if not self.has_fts5():
+            return False
+        try:
+            self.conn.execute("DROP TABLE IF EXISTS symbol_fts")
+            self.conn.execute("DROP TABLE IF EXISTS chunk_fts")
+            self.conn.execute(
+                """
+                CREATE VIRTUAL TABLE symbol_fts USING fts5(
+                  snapshot_id UNINDEXED,
+                  node_id UNINDEXED,
+                  text
+                )
+                """
+            )
+            self.conn.execute(
+                """
+                CREATE VIRTUAL TABLE chunk_fts USING fts5(
+                  snapshot_id UNINDEXED,
+                  chunk_id UNINDEXED,
+                  text
+                )
+                """
+            )
+            self.conn.execute(
+                """
+                INSERT INTO symbol_fts(snapshot_id, node_id, text)
+                SELECT node.snapshot_id, node.id,
+                       COALESCE(node.name, '') || ' ' ||
+                       COALESCE(node.qualified_name, '') || ' ' ||
+                       COALESCE(node.symbol_key, '') || ' ' ||
+                       COALESCE(file.path, '')
+                FROM node
+                LEFT JOIN file ON file.id = node.file_id
+                WHERE node.snapshot_id = ?
+                """,
+                (snapshot_id,),
+            )
+            self.conn.execute(
+                """
+                INSERT INTO chunk_fts(snapshot_id, chunk_id, text)
+                SELECT file.snapshot_id, chunk.id, chunk.text
+                FROM chunk
+                JOIN file ON file.id = chunk.file_id
+                WHERE file.snapshot_id = ?
+                """,
+                (snapshot_id,),
+            )
+        except sqlite3.OperationalError:
+            return False
+        return True
+
     def latest_snapshot_id(self, root_path: str | Path | None = None) -> int | None:
         """Return the most recent snapshot id, optionally scoped to a repo root."""
         if root_path is None:

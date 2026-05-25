@@ -89,6 +89,9 @@ def run_index(
         store.insert_chunks(chunks, file_ids, node_ids)
         store.insert_diagnostics(snapshot_id, diagnostics, file_ids)
         stats = store.build_index_stats(snapshot_id)
+        stats["feature.fts5"] = (
+            "enabled" if store.configure_fts(snapshot_id) else "disabled"
+        )
         store.upsert_index_stats(snapshot_id, stats)
 
     return IndexResult(

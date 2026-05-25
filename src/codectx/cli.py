@@ -15,8 +15,10 @@ from codectx.indexing import (
 )
 from codectx.querying import (
     PlaceholderResult,
+    SearchResult,
     SymbolSearchResult,
     placeholder_result,
+    search,
     search_symbols,
 )
 from codectx.querying import QueryingError as QueryServiceError
@@ -102,12 +104,13 @@ def main(argv: list[str] | None = None) -> int:
         return _run_health(args)
     if args.command == "symbols":
         return _run_symbols(args)
+    if args.command == "search":
+        return _run_search(args)
     if args.command in {
         "context",
         "inspect-edge",
         "inspect-node",
         "neighborhood",
-        "search",
     }:
         return _run_query_placeholder(args)
 
@@ -147,6 +150,16 @@ def _run_symbols(args: argparse.Namespace) -> int:
         return 1
 
     _print_symbol_search_result(result)
+    return 0
+
+
+def _run_search(args: argparse.Namespace) -> int:
+    result = search(args.repo, args.query, db_path=args.db)
+    if isinstance(result, QueryServiceError):
+        print(result.message)
+        return 1
+
+    _print_search_result(result)
     return 0
 
 
@@ -191,6 +204,39 @@ def _print_symbol_search_result(result: SymbolSearchResult) -> None:
             f"- id={symbol.node_id} score={symbol.score} "
             f"{symbol.kind}{language} {label} {location}"
         )
+
+
+def _print_search_result(result: SearchResult) -> None:
+    if not result.symbols and not result.chunks:
+        print(f"No results found for {result.query}.")
+        return
+
+    mode = "fts" if result.used_fts else "like"
+    print(f"Search results for {result.query} ({mode}):")
+    if result.symbols:
+        print("symbols:")
+        for symbol in result.symbols:
+            location = _format_location(
+                symbol.file_path, symbol.start_line, symbol.end_line
+            )
+            label = (
+                symbol.qualified_name or symbol.name or symbol.symbol_key or "<unnamed>"
+            )
+            language = f" {symbol.language}" if symbol.language else ""
+            print(
+                f"- id={symbol.node_id} score={symbol.score} "
+                f"{symbol.kind}{language} {label} {location}"
+            )
+    if result.chunks:
+        print("chunks:")
+        for chunk in result.chunks:
+            location = _format_location(
+                chunk.file_path, chunk.start_line, chunk.end_line
+            )
+            print(
+                f"- id={chunk.chunk_id} score={chunk.score} "
+                f"{chunk.kind} {location} tokens={chunk.token_estimate}"
+            )
 
 
 def _format_location(

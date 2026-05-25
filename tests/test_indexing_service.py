@@ -33,6 +33,7 @@ def test_run_index_and_read_health_round_trip(tmp_path: Path) -> None:
     assert index_result.stats["occurrences"] == "2"
     assert index_result.stats["chunks"] == "2"
     assert index_result.stats["diagnostics"] == "0"
+    assert index_result.stats["feature.fts5"] in {"enabled", "disabled"}
     assert index_result.stats["language.java"] == "1"
     assert index_result.stats["language.cpp"] == "1"
 
@@ -75,6 +76,7 @@ def test_run_index_persists_java_and_cpp_graph_facts(tmp_path: Path) -> None:
     assert int(result.stats["edges"]) >= 3
     assert int(result.stats["chunks"]) >= 4
     assert int(result.stats["occurrences"]) >= 5
+    assert result.stats["feature.fts5"] in {"enabled", "disabled"}
 
     with GraphStore(db_path) as store:
         rows = store.conn.execute(
@@ -103,6 +105,13 @@ def test_run_index_persists_java_and_cpp_graph_facts(tmp_path: Path) -> None:
 
         chunk_count = store.conn.execute("SELECT COUNT(*) FROM chunk").fetchone()[0]
         assert chunk_count == int(result.stats["chunks"])
+        if result.stats["feature.fts5"] == "enabled":
+            assert (
+                store.conn.execute("SELECT COUNT(*) FROM symbol_fts").fetchone()[0] > 0
+            )
+            assert (
+                store.conn.execute("SELECT COUNT(*) FROM chunk_fts").fetchone()[0] > 0
+            )
 
 
 def test_run_index_uses_supplied_frontend_registry(tmp_path: Path) -> None:

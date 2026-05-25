@@ -585,7 +585,7 @@ Acceptance:
 
 ### T041 — Add optional FTS support
 
-Status: todo
+Status: done
 
 Depends on: T040
 
