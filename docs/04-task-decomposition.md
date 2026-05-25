@@ -1206,7 +1206,7 @@ Acceptance:
 
 ### T091 — Create C++ golden fixture repository
 
-Status: todo
+Status: done
 
 Depends on: T080, T081, T082
 

@@ -29,6 +29,31 @@ def test_java_basic_golden_graph_and_context(tmp_path: Path) -> None:
     )
 
 
+def test_cpp_basic_golden_graph_and_context(tmp_path: Path) -> None:
+    repo = _copy_fixture("cpp_basic", tmp_path)
+    db_path = tmp_path / "graph.sqlite"
+
+    result = run_index(repo, db_path=db_path)
+
+    assert isinstance(result, IndexResult)
+    assert _normalize_graph(db_path, result) == _load_json(
+        "cpp_basic/expected_graph.json"
+    )
+    assert _normalize_context(repo, db_path, "explain") == _load_json(
+        "cpp_basic/expected_context_explain.json"
+    )
+    assert _normalize_context(repo, db_path, "dependencies") == _load_json(
+        "cpp_basic/expected_context_dependencies.json"
+    )
+    assert _normalize_context(
+        repo,
+        db_path,
+        "dependencies",
+        file_path="src/payment_service.cpp",
+        line=9,
+    ) == _load_json("cpp_basic/expected_context_dependencies_source.json")
+
+
 def _copy_fixture(name: str, tmp_path: Path) -> Path:
     source = FIXTURE_DIR / name
     destination = tmp_path / name
@@ -88,11 +113,20 @@ def _normalize_graph(db_path: Path, result: IndexResult) -> dict[str, object]:
     }
 
 
-def _normalize_context(repo: Path, db_path: Path, goal: str) -> dict[str, object]:
+def _normalize_context(
+    repo: Path,
+    db_path: Path,
+    goal: str,
+    *,
+    file_path: str | None = None,
+    line: int | None = None,
+) -> dict[str, object]:
     result = build_context(
         repo,
         db_path=db_path,
-        symbol="authorize",
+        symbol=None if file_path is not None else "authorize",
+        file_path=file_path,
+        line=line,
         goal=goal,
         output_format="json",
     )

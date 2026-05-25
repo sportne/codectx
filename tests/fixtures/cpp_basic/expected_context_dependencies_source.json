@@ -1,0 +1,21 @@
+{
+  "anchor": {
+    "file": "src/payment_service.cpp",
+    "node_name": "PaymentService::authorize",
+    "qualified_name": "acme::PaymentService::authorize(constPaymentRequest&)"
+  },
+  "goal": "dependencies",
+  "items": [
+    {"edge_kind": null, "file": "src/payment_service.cpp", "kind": "target.definition", "line_range": [9, 12], "node_name": "PaymentService::authorize", "reason": "target definition"},
+    {"edge_kind": null, "file": "src/payment_service.cpp", "kind": "enclosing.namespace", "line_range": [5, 21], "node_name": "acme", "reason": "enclosing namespace"},
+    {"edge_kind": null, "file": "src/payment_service.cpp", "kind": "include", "line_range": [3, 3], "node_name": null, "reason": "same-file include"},
+    {"edge_kind": null, "file": "src/payment_service.cpp", "kind": "include", "line_range": [1, 1], "node_name": null, "reason": "same-file include"},
+    {"edge_kind": "uses_type", "file": "include/acme/payment_service.hpp", "kind": "neighborhood.type", "line_range": [7, 9], "node_name": "PaymentRequest", "reason": "referenced type"},
+    {"edge_kind": null, "file": "src/payment_service.cpp", "kind": "sibling.definition", "line_range": [7, 7], "node_name": "PaymentService::PaymentService", "reason": "same-file sibling"},
+    {"edge_kind": "calls", "file": "src/payment_service.cpp", "kind": "neighborhood.callee", "line_range": [14, 19], "node_name": "PaymentService::validate", "reason": "direct callee"}
+  ],
+  "uncertainty_notes": [
+    "Unresolved calls relationship from target: gateway_->charge.",
+    "Unresolved references relationship from target: gateway_."
+  ]
+}

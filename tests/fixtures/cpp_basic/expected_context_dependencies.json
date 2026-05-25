@@ -1,0 +1,21 @@
+{
+  "anchor": {
+    "file": "include/acme/payment_service.hpp",
+    "node_name": "authorize",
+    "qualified_name": "acme::PaymentService::authorize(constPaymentRequest&)"
+  },
+  "goal": "dependencies",
+  "items": [
+    {"edge_kind": null, "file": "include/acme/payment_service.hpp", "kind": "target.definition", "line_range": [14, 14], "node_name": "authorize", "reason": "target definition"},
+    {"edge_kind": null, "file": "include/acme/payment_service.hpp", "kind": "enclosing.type", "line_range": [11, 19], "node_name": "PaymentService", "reason": "enclosing type"},
+    {"edge_kind": null, "file": "include/acme/payment_service.hpp", "kind": "sibling.definition", "line_range": [8, 8], "node_name": "amount", "reason": "same-file sibling"},
+    {"edge_kind": null, "file": "include/acme/payment_service.hpp", "kind": "include", "line_range": [3, 3], "node_name": null, "reason": "same-file include"},
+    {"edge_kind": null, "file": "include/acme/payment_service.hpp", "kind": "sibling.definition", "line_range": [13, 13], "node_name": "PaymentService", "reason": "same-file sibling"},
+    {"edge_kind": null, "file": "include/acme/payment_service.hpp", "kind": "sibling.definition", "line_range": [18, 18], "node_name": "validate", "reason": "same-file sibling"},
+    {"edge_kind": null, "file": "tests/payment_service_test.cpp", "kind": "test.related", "line_range": [5, 9], "node_name": "authorize_allows_valid_payment", "reason": "related test"},
+    {"edge_kind": null, "file": "tests/payment_service_test.cpp", "kind": "test.related", "line_range": [11, 15], "node_name": "authorize_fails_invalid_payment", "reason": "related test"}
+  ],
+  "uncertainty_notes": [
+    "Symbol query matched 4 symbols; selected the top-ranked match."
+  ]
+}
