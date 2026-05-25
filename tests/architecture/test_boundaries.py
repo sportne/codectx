@@ -129,6 +129,31 @@ def test_direct_print_calls_stay_in_cli() -> None:
     assert not violations, "\n".join(violations)
 
 
+def test_cli_keeps_indexing_orchestration_in_indexing_service() -> None:
+    cli_path = helpers.PACKAGE_DIR / "cli.py"
+    forbidden = (
+        "codectx.frontends",
+        "codectx.graph.store",
+        "codectx.scanner",
+    )
+    violations: list[str] = []
+
+    for reference in helpers.iter_import_references(cli_path):
+        if any(
+            helpers.is_forbidden_module(reference.module, forbidden_prefix)
+            for forbidden_prefix in forbidden
+        ):
+            violations.append(
+                helpers.format_reference(
+                    reference.path,
+                    reference.lineno,
+                    f"cli must delegate indexing orchestration instead of importing '{reference.module}'",
+                )
+            )
+
+    assert not violations, "\n".join(violations)
+
+
 def test_internal_private_modules_are_not_imported_cross_layer() -> None:
     violations: list[str] = []
 

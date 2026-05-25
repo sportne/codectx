@@ -104,6 +104,8 @@ milestones:
   - id: M7
     name: Ranking, budgeting, and provenance traces
     tasks:
+      - id: T069
+        status: done
       - id: T070
         status: todo
       - id: T071

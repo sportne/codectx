@@ -956,6 +956,28 @@ Acceptance:
 
 ## M7 — Ranking, budgeting, and provenance traces
 
+### T069 — Lock indexing service boundary
+
+Status: done
+
+Depends on: T029
+
+Requirement coverage: ARCH-001
+
+Work:
+
+- Keep indexing orchestration inside the existing indexing service.
+- Verify `cli.py` does not import scanner/frontends/graph-store orchestration directly.
+- Do not add a duplicate indexing service.
+
+Deliverable:
+
+- Architecture coverage for indexing service delegation.
+
+Acceptance:
+
+- Boundary tests fail if `cli.py` grows direct indexing orchestration imports.
+
 ### T070 — Implement scoring model
 
 Status: todo
