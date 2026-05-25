@@ -241,5 +241,85 @@ def test_java_frontend_extracts_occurrences_and_chunks() -> None:
     assert "public List<String> authorize" in method_chunk.text
 
 
+def test_java_frontend_extracts_call_like_occurrences_and_edges() -> None:
+    frontend = JavaTreeSitterFrontend()
+    source = b"""class PaymentService {
+    boolean authorize(User user) {
+        validate(user);
+        this.audit();
+        new Receipt();
+        return gateway.charge(user);
+    }
+
+    void validate(User user) {}
+    void audit() {}
+}
+class Receipt {}
+"""
+
+    facts = frontend.extract("src/PaymentService.java", source)
+
+    call_occurrences = [
+        occurrence for occurrence in facts.occurrences if occurrence.role == "call"
+    ]
+    assert [
+        (occurrence.text, occurrence.resolved_key) for occurrence in call_occurrences
+    ] == [
+        (
+            "validate",
+            "java:src/PaymentService.java#PaymentService.validate(User)",
+        ),
+        ("audit", "java:src/PaymentService.java#PaymentService.audit()"),
+        ("Receipt", None),
+        ("gateway.charge", None),
+    ]
+    assert {
+        (occurrence.node_key, occurrence.span.start_line)
+        for occurrence in call_occurrences
+    } == {
+        ("java:src/PaymentService.java#PaymentService.authorize(User)", 3),
+        ("java:src/PaymentService.java#PaymentService.authorize(User)", 4),
+        ("java:src/PaymentService.java#PaymentService.authorize(User)", 5),
+        ("java:src/PaymentService.java#PaymentService.authorize(User)", 6),
+    }
+
+    call_edges = [edge for edge in facts.edges if edge.kind == "calls"]
+    assert [(edge.dst_key, edge.unresolved_dst) for edge in call_edges] == [
+        ("java:src/PaymentService.java#PaymentService.validate(User)", None),
+        ("java:src/PaymentService.java#PaymentService.audit()", None),
+        (None, "Receipt"),
+        (None, "gateway.charge"),
+    ]
+    assert [edge.metadata["argument_count"] for edge in call_edges] == [1, 0, 0, 1]
+
+
+def test_java_frontend_leaves_ambiguous_same_class_calls_unresolved() -> None:
+    frontend = JavaTreeSitterFrontend()
+    source = b"""class Foo {
+    void target() {
+        overloaded(value);
+    }
+    void overloaded(String value) {}
+    void overloaded(Integer value) {}
+}
+"""
+
+    facts = frontend.extract("src/Foo.java", source)
+
+    call_edge = next(edge for edge in facts.edges if edge.kind == "calls")
+    assert call_edge.dst_key is None
+    assert call_edge.unresolved_dst == "overloaded"
+    assert call_edge.confidence == 0.45
+
+    call_occurrence = next(
+        occurrence for occurrence in facts.occurrences if occurrence.role == "call"
+    )
+    assert call_occurrence.resolved_key is None
+    assert call_occurrence.metadata == {
+        "argument_count": 1,
+        "call_kind": "method_invocation",
+    }
+
+
 def _span_text(source: bytes, span) -> str:
     return source[span.start_byte : span.end_byte].decode("utf-8")

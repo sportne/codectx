@@ -114,6 +114,66 @@ def test_run_index_persists_java_and_cpp_graph_facts(tmp_path: Path) -> None:
             )
 
 
+def test_run_index_persists_java_call_like_facts(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    _write(
+        repo / "src" / "PaymentService.java",
+        "class PaymentService {\n"
+        "  boolean authorize(User user) {\n"
+        "    validate(user);\n"
+        "    return gateway.charge(user);\n"
+        "  }\n"
+        "  void validate(User user) {}\n"
+        "}\n",
+    )
+    db_path = tmp_path / "graph.sqlite"
+
+    result = run_index(repo, db_path=db_path)
+
+    assert isinstance(result, IndexResult)
+    assert int(result.stats["edges"]) >= 3
+    assert int(result.stats["occurrences"]) >= 5
+
+    with GraphStore(db_path) as store:
+        rows = store.conn.execute(
+            """
+            SELECT edge.kind, src.symbol_key AS src_key, dst.symbol_key AS dst_key,
+                   edge.unresolved_dst
+            FROM edge
+            LEFT JOIN node AS src ON src.id = edge.src_node_id
+            LEFT JOIN node AS dst ON dst.id = edge.dst_node_id
+            WHERE edge.kind = 'calls'
+            ORDER BY edge.start_line, edge.id
+            """
+        ).fetchall()
+        assert [(row["dst_key"], row["unresolved_dst"]) for row in rows] == [
+            (
+                "java:src/PaymentService.java#PaymentService.validate(User)",
+                None,
+            ),
+            (None, "gateway.charge"),
+        ]
+        assert {row["src_key"] for row in rows} == {
+            "java:src/PaymentService.java#PaymentService.authorize(User)"
+        }
+
+        occurrence_rows = store.conn.execute(
+            """
+            SELECT role, text, resolved_node_id
+            FROM occurrence
+            WHERE role = 'call'
+            ORDER BY start_line, id
+            """
+        ).fetchall()
+        assert [
+            (row["text"], row["resolved_node_id"] is not None)
+            for row in occurrence_rows
+        ] == [
+            ("validate", True),
+            ("gateway.charge", False),
+        ]
+
+
 def test_run_index_uses_supplied_frontend_registry(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     _write(repo / "src" / "Foo.java", "class Foo {}\n")

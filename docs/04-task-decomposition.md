@@ -840,7 +840,7 @@ Acceptance:
 
 ### T060 — Extract Java call-like occurrences
 
-Status: todo
+Status: done
 
 Depends on: T033, T035
 
