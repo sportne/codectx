@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from codectx.context.anchors import AnchorError, AnchorResult, resolve_file_line_anchor
 from codectx.graph.query import ChunkSearchResult, CombinedSearchResult, SymbolResult
 from codectx.graph.query import search as graph_search
 from codectx.graph.query import search_symbols as graph_search_symbols
@@ -59,6 +60,16 @@ class SearchResult:
     used_fts: bool
 
 
+@dataclass(frozen=True)
+class FileLineAnchorResult:
+    """File/line anchor resolution response for callers."""
+
+    repo: Path
+    db_path: Path
+    snapshot_id: int
+    anchor: AnchorResult
+
+
 def resolve_query_context(
     repo: str | Path,
     *,
@@ -86,6 +97,37 @@ def resolve_query_context(
         repo=repo_path,
         db_path=resolved_db_path,
         snapshot_id=snapshot_id,
+    )
+
+
+def resolve_anchor(
+    repo: str | Path,
+    file_path: str | Path,
+    line: int,
+    *,
+    db_path: str | Path | None = None,
+) -> FileLineAnchorResult | QueryingError:
+    """Resolve a file/line anchor against the latest repository snapshot."""
+    context = resolve_query_context(repo, db_path=db_path)
+    if isinstance(context, QueryingError):
+        return context
+    relative_file_path = _repo_relative_path(context.repo, file_path)
+
+    with GraphStore(context.db_path) as store:
+        anchor = resolve_file_line_anchor(
+            store.conn,
+            context.snapshot_id,
+            relative_file_path,
+            line,
+        )
+    if isinstance(anchor, AnchorError):
+        return QueryingError(anchor.message)
+
+    return FileLineAnchorResult(
+        repo=context.repo,
+        db_path=context.db_path,
+        snapshot_id=context.snapshot_id,
+        anchor=anchor,
     )
 
 
@@ -147,6 +189,16 @@ def search_symbols(
         query=query,
         symbols=symbols,
     )
+
+
+def _repo_relative_path(repo: Path, file_path: str | Path) -> str:
+    path = Path(file_path)
+    if path.is_absolute():
+        try:
+            return path.resolve().relative_to(repo).as_posix()
+        except ValueError:
+            return path.as_posix()
+    return path.as_posix()
 
 
 def placeholder_result(command: str) -> PlaceholderResult:

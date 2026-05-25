@@ -4,6 +4,12 @@ _.extract  # frontend protocol method
 
 _.anchor  # context bundle field
 _.chunks  # extracted facts field
+_.chunk_end_line  # anchor result field
+_.chunk_id  # anchor result field
+_.chunk_kind  # anchor result field
+_.chunk_start_line  # anchor result field
+_.chunk_text  # anchor result field
+_.chunk_token_estimate  # anchor result field
 _.code  # diagnostic field
 _.confidence  # graph fact and context bundle field
 _.content_hash  # file record field
@@ -15,6 +21,7 @@ _.end_col  # source span field
 _.end_line  # source span and chunk field
 _.extractor  # graph fact and context bundle field
 _.file  # context item field
+_.file_id  # anchor result field
 _.file_path  # graph fact and source span field
 _.index_health  # context bundle field
 _.is_generated  # file record field
@@ -27,7 +34,9 @@ _.line_range  # context item field
 _.message  # diagnostic field
 _.metadata  # graph fact and context item field
 _.name  # graph fact and omitted item field
+_.node_kind  # anchor result field
 _.node_key  # occurrence and chunk fact field
+_.node_name  # anchor result field
 _.nodes  # extracted facts field
 _.occurrences  # extracted facts field
 _.omitted  # context bundle field
@@ -91,6 +100,7 @@ named_children  # Tree-sitter helper API
 node_span  # Tree-sitter helper API
 node_text  # Tree-sitter helper API
 parse_source  # Tree-sitter helper API
+resolve_anchor  # query service anchor resolution API
 resolve_query_context  # query service snapshot resolution API
 snippet_by_byte_span  # source snippet public API
 snippet_by_line_range  # source snippet public API

@@ -608,7 +608,7 @@ Acceptance:
 
 ### T042 — Implement file/line anchor resolution
 
-Status: todo
+Status: done
 
 Depends on: T035
 
