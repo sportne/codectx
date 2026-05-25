@@ -6,7 +6,7 @@ The project is intentionally **not** an LLM integration, MCP server, IDE plugin,
 
 ## Project definition
 
-> A local, Python-based code-context packaging tool that indexes Java and C++ repositories into a SQLite-backed graph and emits provenance-aware Markdown/JSON context bundles for manual LLM use.
+> A local, Python-based code-context packaging tool that indexes Java and C++ repositories into a SQLite-backed graph and emits provenance-aware Markdown, JSON, and plain-text context bundles for manual LLM use.
 
 ## MVP objective
 
@@ -14,16 +14,18 @@ The MVP should answer this question well:
 
 > Given a file/line or symbol name, what source-grounded context should a human paste into an LLM to understand or ask about this code?
 
-Initial target commands:
+Supported MVP commands:
 
 ```bash
-codectx index /path/to/repo
-codectx search "PaymentService authorize"
-codectx symbols "PaymentService"
-codectx context --file src/main/java/acme/PaymentService.java --line 87 --goal explain --budget 8000 --format markdown
-codectx context --symbol PaymentService.authorize --goal failure-modes --budget 8000 --format json
-codectx inspect-node 123
-codectx inspect-edge 456
+codectx index /path/to/repo [--db /path/to/graph.sqlite] [--rebuild]
+codectx health --repo /path/to/repo [--db /path/to/graph.sqlite] [--integrity]
+codectx symbols "PaymentService" --repo /path/to/repo
+codectx search "PaymentService authorize" --repo /path/to/repo
+codectx context --repo /path/to/repo --symbol PaymentService.authorize --goal explain --format markdown
+codectx context --repo /path/to/repo --file src/main/java/acme/PaymentService.java --line 87 --goal failure-modes --format json
+codectx neighborhood --repo /path/to/repo --symbol PaymentService.authorize --depth 1 --direction out
+codectx inspect-node 123 --repo /path/to/repo
+codectx inspect-edge 456 --repo /path/to/repo
 ```
 
 ## MVP scope
@@ -50,6 +52,86 @@ Excluded from MVP:
 - Required Maven/Gradle/CMake/Bazel integration.
 - Neo4j or external graph databases.
 - Embeddings as a core dependency.
+
+## Quickstart
+
+Create the development environment and install the CLI:
+
+```bash
+make setup-venv
+make install-dev
+```
+
+Index one of the checked-in fixtures:
+
+```bash
+codectx index tests/fixtures/java_basic --db /tmp/codectx-java-basic.sqlite --rebuild
+codectx health --repo tests/fixtures/java_basic --db /tmp/codectx-java-basic.sqlite --integrity
+```
+
+Find a symbol and generate a context bundle:
+
+```bash
+codectx symbols PaymentService --repo tests/fixtures/java_basic --db /tmp/codectx-java-basic.sqlite
+codectx context \
+  --repo tests/fixtures/java_basic \
+  --db /tmp/codectx-java-basic.sqlite \
+  --symbol PaymentService.authorize \
+  --goal explain \
+  --budget 4000 \
+  --format markdown
+```
+
+Generate JSON or plain text instead:
+
+```bash
+codectx context --repo tests/fixtures/java_basic --db /tmp/codectx-java-basic.sqlite --symbol PaymentService.authorize --goal failure-modes --format json
+codectx context --repo tests/fixtures/java_basic --db /tmp/codectx-java-basic.sqlite --file src/main/java/acme/PaymentService.java --line 10 --goal dependencies --format text
+```
+
+Write output to a file when the parent directory already exists:
+
+```bash
+mkdir -p /tmp/codectx-output
+codectx index tests/fixtures/cpp_basic --db /tmp/codectx-cpp-basic.sqlite --rebuild
+codectx context --repo tests/fixtures/cpp_basic --db /tmp/codectx-cpp-basic.sqlite --symbol PaymentService::authorize --goal call-neighborhood --output /tmp/codectx-output/context.md
+```
+
+## Command Reference
+
+- `index PATH`: recursively scans Java and C++ source/header files, applies the SQLite schema, extracts Tree-sitter facts, persists graph rows, creates optional FTS5 tables when supported, and prints health stats. Without `--db`, the database is stored at `<repo>/.codectx/graph.sqlite`. Use `--rebuild` to remove the database and SQLite sidecars first.
+- `health --repo PATH`: reads persisted health stats for the latest snapshot. Add `--integrity` to run SQLite integrity, foreign-key, span-range, and unresolved-edge invariant checks. Integrity failures return a nonzero exit code.
+- `symbols QUERY`: searches symbol names, qualified names, symbol keys, and file paths.
+- `search QUERY`: combines symbol and chunk search, using FTS5 when available and deterministic SQL fallback otherwise.
+- `context`: generates a ranked context bundle from either `--symbol QUERY` or `--file PATH --line N`. Supported goals are `explain`, `failure-modes`, `dependencies`, and `call-neighborhood`. Supported formats are `markdown`, `json`, and `text`.
+- `neighborhood`: shows a bounded graph neighborhood from a symbol seed. Use `--depth`, `--direction out|in|both`, repeated `--edge-kind`, and `--limit` to control traversal.
+- `inspect-node NODE_ID` and `inspect-edge EDGE_ID`: display persisted graph details, spans, confidence, extractor provenance, endpoints, unresolved text, and metadata.
+
+## Indexing Behavior
+
+The scanner walks repositories deterministically and skips built-in generated/cache directories such as `.git`, `.codectx`, `node_modules`, `target`, `build`, `bazel-*`, `out`, `dist`, `.venv`, `venv`, `__pycache__`, `.gradle`, `.idea`, and `.vscode`.
+
+Supported languages are Java and C++ source/header extensions. Unsupported files are ignored. Indexing does not run Maven, Gradle, CMake, Bazel, preprocessors, compilers, or test suites. Parse failures are recorded as diagnostics and do not abort indexing.
+
+The SQLite database stores file records, symbol nodes, edges, occurrences, snippets/chunks, diagnostics, index health stats, and optional FTS tables. The database is local and can be deleted or rebuilt at any time.
+
+## Output Formats
+
+Markdown and text output are intended for manual copy/paste into an LLM. JSON output is intended for scripts and regression tests. Every context bundle includes query details, anchor details, index health, ranked snippets, omitted candidates, uncertainty notes, and trace/provenance data.
+
+## Privacy
+
+`codectx` runs locally against local files. It does not call an LLM, upload source code, send telemetry, or require a remote service. The user decides what rendered context to copy elsewhere.
+
+## Limitations
+
+- Java and C++ extraction is heuristic and Tree-sitter based, not compiler-perfect semantic analysis.
+- C++ templates, macros, overload resolution, includes, and build-configuration-specific code are only partially understood.
+- Java symbol resolution does not perform full classpath, generics, annotation processing, or build-tool analysis.
+- Call-like and reference edges are conservative heuristics; unresolved relationships are expected and rendered explicitly.
+- Large enclosing scopes can consume much of a small context budget.
+- Parser diagnostics from vendored or third-party C++ code can affect failure-mode bundles until ignored-path tuning is expanded.
+- `context` bundles are prompt-preparation aids, not correctness proofs.
 
 ## Repository layout
 
@@ -108,9 +190,9 @@ The default target platforms can be overridden when building:
 make artifact ARTIFACT_PLATFORMS="--platform manylinux2014_x86_64-cp-312-cp312"
 ```
 
-## Development status
+## Development Status
 
-This repository is an initial planning and skeleton repository. The documentation defines the MVP and the ordered task decomposition needed to implement it.
+The MVP CLI is implemented for local Java and C++ indexing, graph inspection, search, neighborhoods, and context bundle generation. See [`docs/validation-notes.md`](docs/validation-notes.md) for the latest local validation pass.
 
 ## Design principles
 

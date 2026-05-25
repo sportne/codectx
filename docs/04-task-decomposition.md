@@ -1316,7 +1316,7 @@ Acceptance:
 
 ### T096 — MVP polish and documentation pass
 
-Status: todo
+Status: done
 
 Depends on: T095
 

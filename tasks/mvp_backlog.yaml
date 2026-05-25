@@ -143,7 +143,7 @@ milestones:
       - id: T095
         status: done
       - id: T096
-        status: todo
+        status: done
       - id: T097
         status: todo
 critical_path_to_first_bundle:
