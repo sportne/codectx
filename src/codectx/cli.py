@@ -13,6 +13,7 @@ from codectx.indexing import (
     read_health,
     run_index,
 )
+from codectx.querying import PlaceholderResult, placeholder_result
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -93,10 +94,17 @@ def main(argv: list[str] | None = None) -> int:
         return _run_index(args)
     if args.command == "health":
         return _run_health(args)
+    if args.command in {
+        "context",
+        "inspect-edge",
+        "inspect-node",
+        "neighborhood",
+        "search",
+        "symbols",
+    }:
+        return _run_query_placeholder(args)
 
-    print(f"codectx command '{args.command}' is defined but not implemented yet.")
-    print("See docs/04-task-decomposition.md for the ordered MVP task plan.")
-    return 0
+    raise AssertionError(f"unhandled command: {args.command}")
 
 
 def _run_index(args: argparse.Namespace) -> int:
@@ -119,6 +127,12 @@ def _run_health(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_query_placeholder(args: argparse.Namespace) -> int:
+    result = placeholder_result(args.command)
+    _print_placeholder_result(result)
+    return 0
+
+
 def _print_index_result(result: IndexResult) -> None:
     print(f"Indexed {result.repo}")
     print(f"database: {result.db_path}")
@@ -138,6 +152,10 @@ def _print_health_result(result: HealthResult) -> None:
 def _print_stats(stats: dict[str, str]) -> None:
     for key, value in sorted(stats.items()):
         print(f"{key}: {value}")
+
+
+def _print_placeholder_result(result: PlaceholderResult) -> None:
+    print(result.message)
 
 
 if __name__ == "__main__":

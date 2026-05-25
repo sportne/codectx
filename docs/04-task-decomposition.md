@@ -538,6 +538,29 @@ Acceptance:
 
 ## M4 — Symbol search and anchor resolution
 
+### T039 — Add internal query service
+
+Status: done
+
+Depends on: T035
+
+Requirement coverage: FR-101, FR-102, FR-105, FR-106
+
+Work:
+
+- Add CLI-facing query orchestration outside `cli.py`.
+- Share missing-index and latest-snapshot resolution for query commands.
+- Keep unimplemented query commands routed through the service until their tasks land.
+
+Deliverable:
+
+- `querying.py` query service foundation.
+
+Acceptance:
+
+- Query service resolves latest snapshots and missing-index errors.
+- Query CLI placeholders are routed through the service.
+
 ### T040 — Implement symbol search query
 
 Status: todo
@@ -1237,7 +1260,7 @@ T001 → T002 → T003
 T010 → T011 → T012 → T013
 T020 → T021 → T022 → T023 → T024
 T030 → T031 → T032 → T033 → T034 → T035
-T040 → T042
+T039 → T040 → T042
 T050 → T051 → T052 → T053 → T055
 ```
 

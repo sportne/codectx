@@ -91,6 +91,7 @@ named_children  # Tree-sitter helper API
 node_span  # Tree-sitter helper API
 node_text  # Tree-sitter helper API
 parse_source  # Tree-sitter helper API
+resolve_query_context  # query service snapshot resolution API
 snippet_by_byte_span  # source snippet public API
 snippet_by_line_range  # source snippet public API
 to_dict  # context bundle serialization API

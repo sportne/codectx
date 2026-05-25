@@ -59,6 +59,8 @@ milestones:
   - id: M4
     name: Symbol search and anchor resolution
     tasks:
+      - id: T039
+        status: done
       - id: T040
         status: todo
       - id: T041
@@ -153,6 +155,7 @@ critical_path_to_first_bundle:
   - T033
   - T034
   - T035
+  - T039
   - T040
   - T042
   - T050

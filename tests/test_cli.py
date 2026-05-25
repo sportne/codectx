@@ -42,10 +42,10 @@ def test_parser_version_exits_with_package_version(
 def test_main_reports_defined_but_unimplemented_command(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert main(["search", "PaymentService"]) == 0
+    assert main(["symbols", "PaymentService"]) == 0
 
     output = capsys.readouterr().out
-    assert "codectx command 'search' is defined but not implemented yet." in output
+    assert "codectx command 'symbols' is defined but not implemented yet." in output
     assert "docs/04-task-decomposition.md" in output
 
 
