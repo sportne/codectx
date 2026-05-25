@@ -7,6 +7,8 @@ from json import dumps
 from pathlib import Path
 
 from codectx import __version__
+from codectx.contexting import ContextingError as ContextServiceError
+from codectx.contexting import ContextResult, build_context
 from codectx.graph.query import EdgeEndpoint
 from codectx.indexing import (
     HealthResult,
@@ -116,7 +118,9 @@ def main(argv: list[str] | None = None) -> int:
         return _run_inspect_node(args)
     if args.command == "inspect-edge":
         return _run_inspect_edge(args)
-    if args.command in {"context", "neighborhood"}:
+    if args.command == "context":
+        return _run_context(args)
+    if args.command == "neighborhood":
         return _run_query_placeholder(args)
 
     raise AssertionError(f"unhandled command: {args.command}")
@@ -145,6 +149,26 @@ def _run_health(args: argparse.Namespace) -> int:
 def _run_query_placeholder(args: argparse.Namespace) -> int:
     result = placeholder_result(args.command)
     _print_placeholder_result(result)
+    return 0
+
+
+def _run_context(args: argparse.Namespace) -> int:
+    result = build_context(
+        args.repo,
+        db_path=args.db,
+        symbol=args.symbol,
+        file_path=args.file,
+        line=args.line,
+        goal=args.goal,
+        budget=args.budget,
+        output_format=args.format,
+        output_path=args.output,
+    )
+    if isinstance(result, ContextServiceError):
+        print(result.message)
+        return 1
+
+    _print_context_result(result)
     return 0
 
 
@@ -211,6 +235,14 @@ def _print_stats(stats: dict[str, str]) -> None:
 
 def _print_placeholder_result(result: PlaceholderResult) -> None:
     print(result.message)
+
+
+def _print_context_result(result: ContextResult) -> None:
+    if result.output_path is None:
+        print(result.rendered_text)
+        return
+    result.output_path.write_text(result.rendered_text, encoding="utf-8")
+    print(f"Wrote context bundle to {result.output_path}")
 
 
 def _print_symbol_search_result(result: SymbolSearchResult) -> None:

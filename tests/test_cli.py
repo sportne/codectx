@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from codectx.cli import build_parser, main
+from codectx.contexting import ContextResult
 from codectx.frontends.base import EdgeFact, NodeFact
 from codectx.graph.store import GraphStore
 from codectx.scanner.models import FileRecord
@@ -52,6 +53,90 @@ def test_main_reports_defined_but_unimplemented_command(
         "codectx command 'neighborhood' is defined but not implemented yet." in output
     )
     assert "docs/04-task-decomposition.md" in output
+
+
+def test_context_command_delegates_to_context_service(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def fake_build_context(*_args, **_kwargs):
+        return ContextResult(rendered_text="context service result")
+
+    monkeypatch.setattr("codectx.cli.build_context", fake_build_context)
+
+    assert main(["context", "--symbol", "PaymentService", "--repo", str(tmp_path)]) == 0
+
+    assert capsys.readouterr().out == "context service result\n"
+
+
+def test_context_command_writes_service_output(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    output_path = tmp_path / "context.md"
+
+    def fake_build_context(*_args, **_kwargs):
+        return ContextResult(
+            rendered_text="context service result",
+            output_path=output_path,
+        )
+
+    monkeypatch.setattr("codectx.cli.build_context", fake_build_context)
+
+    assert (
+        main(
+            [
+                "context",
+                "--symbol",
+                "PaymentService",
+                "--repo",
+                str(tmp_path),
+                "--output",
+                str(output_path),
+            ]
+        )
+        == 0
+    )
+
+    assert output_path.read_text(encoding="utf-8") == "context service result"
+    assert f"Wrote context bundle to {output_path}" in capsys.readouterr().out
+
+
+def test_context_command_reports_invalid_anchor_shape(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["context", "--file", "src/Foo.java", "--repo", str(tmp_path)]) == 1
+    assert "--line is required" in capsys.readouterr().out
+
+    assert (
+        main(
+            [
+                "context",
+                "--file",
+                "src/Foo.java",
+                "--line",
+                "0",
+                "--repo",
+                str(tmp_path),
+            ]
+        )
+        == 1
+    )
+    assert "Line number must be 1 or greater" in capsys.readouterr().out
+
+    assert (
+        main(
+            [
+                "context",
+                "--symbol",
+                "PaymentService",
+                "--line",
+                "10",
+                "--repo",
+                str(tmp_path),
+            ]
+        )
+        == 1
+    )
+    assert "--line can only be used with --file" in capsys.readouterr().out
 
 
 def test_index_and_health_commands_persist_and_display_stats(

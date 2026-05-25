@@ -72,6 +72,8 @@ milestones:
   - id: M5
     name: Context bundle v0 for explain
     tasks:
+      - id: T049
+        status: done
       - id: T050
         status: done
       - id: T051
