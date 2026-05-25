@@ -5,8 +5,14 @@ from pathlib import Path
 
 from codectx.context.anchors import AnchorResult, resolve_file_line_anchor
 from codectx.context.formatters import format_json
-from codectx.context.planner import build_explain_bundle
-from codectx.frontends.base import ChunkFact, EdgeFact, NodeFact, OccurrenceFact
+from codectx.context.planner import build_context_bundle, build_explain_bundle
+from codectx.frontends.base import (
+    ChunkFact,
+    DiagnosticFact,
+    EdgeFact,
+    NodeFact,
+    OccurrenceFact,
+)
 from codectx.graph.store import GraphStore
 from codectx.scanner.models import FileRecord
 from codectx.source.spans import SourceSpan
@@ -421,6 +427,7 @@ def test_build_explain_bundle_adds_neighborhood_and_test_candidates(
     assert {
         "stage": "candidates",
         "optional_count": 4,
+        "diagnostic_count": 0,
         "relationship_count": 3,
         "test_count": 1,
     } in bundle.trace
@@ -459,6 +466,56 @@ def test_build_explain_bundle_omits_neighborhood_items_when_over_budget(
     ]
     assert bundle.omitted[0].name == "src/Gateway.java:1"
     assert bundle.omitted[-1].name == "test/PaymentServiceAuthorizeTest.java:2-4"
+
+
+def test_build_failure_modes_bundle_prioritizes_validation_and_failure_tests(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_failure_modes_graph(store, repo)
+        anchor = resolve_file_line_anchor(
+            store.conn, snapshot_id, "src/PaymentService.java", 4
+        )
+        assert isinstance(anchor, AnchorResult)
+
+        bundle = build_context_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=1000,
+            index_health={"diagnostics": "1"},
+            query={"goal": "failure-modes", "budget": 1000},
+        )
+
+    selected_names = [item.metadata.get("node_name") for item in bundle.items]
+    assert selected_names[:2] == ["authorize", "PaymentService"]
+    assert "validatePayment" in selected_names
+    assert "helper" in selected_names
+    assert selected_names.index("validatePayment") < selected_names.index("helper")
+    diagnostic = next(item for item in bundle.items if item.kind == "diagnostic.parser")
+    assert diagnostic.file == "src/PaymentService.java"
+    assert diagnostic.line_range == (5, 5)
+    assert diagnostic.reason == (
+        "parser diagnostic: error parse_error: Java parse error near throw"
+    )
+    assert diagnostic.extractor == "treesitter-java"
+    assert diagnostic.metadata["message"] == "Java parse error near throw"
+    assert diagnostic.score_trace["goal_relevance"] == 4.0
+    assert any(
+        item.kind == "test.related"
+        and item.file == "test/PaymentServiceFailureTest.java"
+        for item in bundle.items
+    )
+    validation = next(
+        item
+        for item in bundle.items
+        if item.metadata.get("node_name") == "validatePayment"
+    )
+    assert validation.score_trace["goal_relevance"] == 4.0
+    assert bundle.index_health["diagnostics"] == "1"
 
 
 def _seed_explain_graph(
@@ -771,6 +828,210 @@ def _seed_neighborhood_context_graph(store: GraphStore, repo: Path) -> int:
                 end_line=4,
                 text=(
                     "  void authorize_allowsValidPayment() {\n"
+                    "    new PaymentService().authorize();\n"
+                    "  }\n"
+                ),
+                token_estimate=15,
+            ),
+        ],
+        file_ids,
+        node_ids,
+    )
+    return snapshot_id
+
+
+def _seed_failure_modes_graph(store: GraphStore, repo: Path) -> int:
+    service_source = (
+        "class PaymentService {\n"
+        "  boolean authorize() {\n"
+        "    return validatePayment() && helper();\n"
+        "  }\n"
+        "  boolean validatePayment() { throw new IllegalStateException(); }\n"
+        "  boolean helper() { return true; }\n"
+        "}\n"
+    )
+    test_source = (
+        "class PaymentServiceFailureTest {\n"
+        "  void authorize_failsInvalidPayment() {\n"
+        "    new PaymentService().authorize();\n"
+        "  }\n"
+        "}\n"
+    )
+    _write(repo / "src" / "PaymentService.java", service_source)
+    _write(repo / "test" / "PaymentServiceFailureTest.java", test_source)
+    store.apply_schema()
+    repo_id = store.create_repo(repo)
+    snapshot_id = store.create_snapshot(repo_id)
+    file_ids = store.insert_files(
+        snapshot_id,
+        [
+            FileRecord(
+                path="src/PaymentService.java",
+                language="java",
+                content_hash="service-failure",
+                size_bytes=len(service_source.encode("utf-8")),
+                line_count=7,
+            ),
+            FileRecord(
+                path="test/PaymentServiceFailureTest.java",
+                language="java",
+                content_hash="test-failure",
+                size_bytes=len(test_source.encode("utf-8")),
+                line_count=5,
+                is_test=True,
+            ),
+        ],
+    )
+    nodes = [
+        _java_node(
+            "type",
+            "PaymentService",
+            "PaymentService",
+            "java:src/PaymentService.java#PaymentService",
+            "src/PaymentService.java",
+            1,
+            7,
+        ),
+        _java_node(
+            "callable",
+            "authorize",
+            "PaymentService.authorize()",
+            "java:src/PaymentService.java#PaymentService.authorize()",
+            "src/PaymentService.java",
+            2,
+            4,
+        ),
+        _java_node(
+            "callable",
+            "validatePayment",
+            "PaymentService.validatePayment()",
+            "java:src/PaymentService.java#PaymentService.validatePayment()",
+            "src/PaymentService.java",
+            5,
+            5,
+        ),
+        _java_node(
+            "callable",
+            "helper",
+            "PaymentService.helper()",
+            "java:src/PaymentService.java#PaymentService.helper()",
+            "src/PaymentService.java",
+            6,
+            6,
+        ),
+        _java_node(
+            "callable",
+            "authorize_failsInvalidPayment",
+            "PaymentServiceFailureTest.authorize_failsInvalidPayment()",
+            "java:test/PaymentServiceFailureTest.java#authorize_failsInvalidPayment()",
+            "test/PaymentServiceFailureTest.java",
+            2,
+            4,
+        ),
+    ]
+    node_ids = store.insert_nodes(snapshot_id, nodes, file_ids)
+    store.insert_edges(
+        snapshot_id,
+        [
+            _edge(
+                "calls",
+                "java:src/PaymentService.java#PaymentService.authorize()",
+                "java:src/PaymentService.java#PaymentService.validatePayment()",
+                "src/PaymentService.java",
+                3,
+            ),
+            _edge(
+                "calls",
+                "java:src/PaymentService.java#PaymentService.authorize()",
+                "java:src/PaymentService.java#PaymentService.helper()",
+                "src/PaymentService.java",
+                3,
+            ),
+        ],
+        file_ids,
+        node_ids,
+    )
+    store.insert_diagnostics(
+        snapshot_id,
+        [
+            DiagnosticFact(
+                file_path="src/PaymentService.java",
+                severity="error",
+                message="Java parse error near throw",
+                extractor="treesitter-java",
+                span=SourceSpan(
+                    file_path="src/PaymentService.java",
+                    start_byte=0,
+                    end_byte=10,
+                    start_line=5,
+                    start_col=2,
+                    end_line=5,
+                    end_col=20,
+                ),
+                code="parse_error",
+                metadata={"node": "ERROR"},
+            )
+        ],
+        file_ids,
+    )
+    store.insert_chunks(
+        [
+            ChunkFact(
+                file_path="src/PaymentService.java",
+                node_key="java:src/PaymentService.java#PaymentService",
+                kind="definition",
+                start_line=1,
+                end_line=7,
+                text=service_source,
+                token_estimate=42,
+            ),
+            ChunkFact(
+                file_path="src/PaymentService.java",
+                node_key="java:src/PaymentService.java#PaymentService.authorize()",
+                kind="definition",
+                start_line=2,
+                end_line=4,
+                text=(
+                    "  boolean authorize() {\n"
+                    "    return validatePayment() && helper();\n"
+                    "  }\n"
+                ),
+                token_estimate=15,
+            ),
+            ChunkFact(
+                file_path="src/PaymentService.java",
+                node_key=(
+                    "java:src/PaymentService.java#PaymentService.validatePayment()"
+                ),
+                kind="definition",
+                start_line=5,
+                end_line=5,
+                text=(
+                    "  boolean validatePayment() { "
+                    "throw new IllegalStateException(); }\n"
+                ),
+                token_estimate=14,
+            ),
+            ChunkFact(
+                file_path="src/PaymentService.java",
+                node_key="java:src/PaymentService.java#PaymentService.helper()",
+                kind="definition",
+                start_line=6,
+                end_line=6,
+                text="  boolean helper() { return true; }\n",
+                token_estimate=8,
+            ),
+            ChunkFact(
+                file_path="test/PaymentServiceFailureTest.java",
+                node_key=(
+                    "java:test/PaymentServiceFailureTest.java#"
+                    "authorize_failsInvalidPayment()"
+                ),
+                kind="definition",
+                start_line=2,
+                end_line=4,
+                text=(
+                    "  void authorize_failsInvalidPayment() {\n"
                     "    new PaymentService().authorize();\n"
                     "  }\n"
                 ),

@@ -94,6 +94,9 @@ def score_candidate(
         "token_cost": -round(0.8 * min(candidate.token_estimate / 1000.0, 1.0), 4),
         "redundancy": 0.0,
     }
+    goal_relevance = _goal_relevance(candidate, goal)
+    if goal_relevance:
+        components["goal_relevance"] = goal_relevance
     score = round(sum(components.values()), 4)
     return RankingResult(
         score=score,
@@ -144,6 +147,45 @@ def _edge_relevance(candidate: RankingCandidate, goal: str) -> float:
 
 def _graph_proximity(candidate: RankingCandidate) -> float:
     return 1.5 if candidate.metadata.get("edge_id") is not None else 0.0
+
+
+def _goal_relevance(candidate: RankingCandidate, goal: str) -> float:
+    if goal != "failure-modes":
+        return 0.0
+    text = " ".join(
+        str(value or "")
+        for value in (
+            candidate.kind,
+            candidate.file_path,
+            candidate.text,
+            candidate.metadata.get("node_name"),
+            candidate.metadata.get("qualified_name"),
+            candidate.metadata.get("symbol_key"),
+        )
+    ).lower()
+    if candidate.kind.startswith("diagnostic."):
+        return 4.0
+    if any(
+        marker in text
+        for marker in (
+            "error",
+            "exception",
+            "fail",
+            "failure",
+            "guard",
+            "invalid",
+            "null",
+            "throw",
+            "validate",
+        )
+    ):
+        return 4.0
+    if (
+        candidate.metadata.get("edge_kind") == "references"
+        and candidate.confidence < 0.6
+    ):
+        return 1.0
+    return 0.0
 
 
 def _source_proximity(candidate: RankingCandidate, anchor: RankingAnchor) -> float:

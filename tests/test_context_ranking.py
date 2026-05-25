@@ -130,3 +130,41 @@ def test_score_candidate_applies_goal_specific_edge_weights() -> None:
     assert call_neighborhood_call > call_neighborhood_dependency
     assert dependencies_dependency > dependencies_call
     assert failure_references > dependencies_call
+
+
+def test_failure_modes_goal_boosts_error_related_candidates() -> None:
+    anchor = RankingAnchor(file_path="src/PaymentService.java", line=5, node_name="pay")
+    validation = score_candidate(
+        RankingCandidate(
+            kind="neighborhood.callee",
+            file_path="src/PaymentService.java",
+            line_range=(8, 8),
+            text="boolean validatePayment() { throw new IllegalStateException(); }\n",
+            token_estimate=16,
+            confidence=0.8,
+            metadata={
+                "edge_id": 10,
+                "edge_kind": "calls",
+                "node_name": "validatePayment",
+            },
+        ),
+        anchor,
+        goal="failure-modes",
+    )
+    helper = score_candidate(
+        RankingCandidate(
+            kind="neighborhood.callee",
+            file_path="src/PaymentService.java",
+            line_range=(9, 9),
+            text="boolean helper() { return true; }\n",
+            token_estimate=8,
+            confidence=0.8,
+            metadata={"edge_id": 11, "edge_kind": "calls", "node_name": "helper"},
+        ),
+        anchor,
+        goal="failure-modes",
+    )
+
+    assert validation.score > helper.score
+    assert validation.score_trace["goal_relevance"] == 4.0
+    assert "goal_relevance" not in helper.score_trace

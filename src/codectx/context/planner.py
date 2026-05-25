@@ -47,6 +47,8 @@ def build_context_bundle(
     trace: list[dict[str, Any]] = [
         {"stage": "anchor", "file": anchor.file_path, "line": anchor.line}
     ]
+    resolved_query = query or {"goal": "explain", "budget": budget}
+    goal = str(resolved_query.get("goal", "explain"))
 
     candidates: list[_Candidate] = []
     target = _target_candidate(conn, repo_path, anchor, notes)
@@ -60,7 +62,13 @@ def build_context_bundle(
 
     relationship_candidates = _relationship_candidates(conn, repo_path, anchor, notes)
     test_candidates = _test_candidates(conn, anchor, _selected_chunk_ids(candidates))
+    diagnostic_candidates = (
+        _diagnostic_candidates(conn, repo_path, snapshot_id, anchor, notes)
+        if goal == "failure-modes"
+        else []
+    )
     base_optional_candidates = [
+        *diagnostic_candidates,
         *_import_include_candidates(conn, repo_path, anchor),
         *relationship_candidates,
         *test_candidates,
@@ -77,12 +85,12 @@ def build_context_bundle(
         {
             "stage": "candidates",
             "optional_count": len(optional_candidates),
+            "diagnostic_count": len(diagnostic_candidates),
             "relationship_count": len(relationship_candidates),
             "test_count": len(test_candidates),
         }
     )
 
-    resolved_query = query or {"goal": "explain", "budget": budget}
     candidates = _score_candidates(candidates, anchor, resolved_query)
     optional_candidates = _score_candidates(optional_candidates, anchor, resolved_query)
     trace.append(
@@ -93,7 +101,12 @@ def build_context_bundle(
         }
     )
 
-    selected, omitted = _select_candidates(candidates, optional_candidates, budget)
+    selected, omitted = _select_candidates(
+        candidates,
+        optional_candidates,
+        budget,
+        goal=goal,
+    )
     items = [
         ContextItem(
             rank=rank,
@@ -397,6 +410,74 @@ def _import_include_candidates(
     return candidates
 
 
+def _diagnostic_candidates(
+    conn: Any,
+    repo: Path,
+    snapshot_id: int,
+    anchor: AnchorResult,
+    notes: list[str],
+) -> list[_Candidate]:
+    rows = conn.execute(
+        """
+        SELECT diagnostic.id, diagnostic.severity, diagnostic.code,
+               diagnostic.message, diagnostic.extractor,
+               diagnostic.metadata_json, diagnostic.start_line,
+               diagnostic.end_line, file.id AS file_id, file.path AS file_path
+        FROM diagnostic
+        LEFT JOIN file ON file.id = diagnostic.file_id
+        WHERE diagnostic.snapshot_id = ?
+        ORDER BY
+          CASE
+            WHEN file.id = ? THEN 0
+            ELSE 1
+          END ASC,
+          file.path ASC,
+          diagnostic.start_line ASC,
+          diagnostic.id ASC
+        """,
+        (snapshot_id, anchor.file_id),
+    ).fetchall()
+    candidates: list[_Candidate] = []
+    for row in rows:
+        file_path = None if row["file_path"] is None else str(row["file_path"])
+        start_line = None if row["start_line"] is None else int(row["start_line"])
+        end_line = None if row["end_line"] is None else int(row["end_line"])
+        line_range = _line_range(start_line, end_line)
+        message = str(row["message"])
+        text = message
+        if file_path is not None and line_range is not None:
+            snippet = _source_snippet(
+                repo, file_path, line_range[0], line_range[1], notes
+            )
+            if snippet is not None:
+                text = snippet.text
+                line_range = (snippet.start_line, snippet.end_line)
+        severity = str(row["severity"])
+        code = None if row["code"] is None else str(row["code"])
+        code_label = "" if code is None else f" {code}"
+        candidates.append(
+            _Candidate(
+                kind="diagnostic.parser",
+                file=file_path,
+                line_range=line_range,
+                text=text,
+                score=3.8 if row["file_id"] == anchor.file_id else 3.0,
+                token_estimate=estimate_token_count(text),
+                reason=f"parser diagnostic: {severity}{code_label}: {message}",
+                confidence=0.8 if severity == "error" else 0.6,
+                extractor=str(row["extractor"]),
+                metadata={
+                    **_metadata(str(row["metadata_json"])),
+                    "diagnostic_id": int(row["id"]),
+                    "severity": severity,
+                    "code": code,
+                    "message": message,
+                },
+            )
+        )
+    return candidates
+
+
 def _relationship_candidates(
     conn: Any,
     repo: Path,
@@ -637,7 +718,7 @@ def _sibling_candidates(
 
 
 def _select_candidates(
-    required: list[_Candidate], optional: list[_Candidate], budget: int
+    required: list[_Candidate], optional: list[_Candidate], budget: int, *, goal: str
 ) -> tuple[list[_Candidate], list[OmittedItem]]:
     selected = list(required)
     used_tokens = sum(candidate.token_estimate for candidate in selected)
@@ -649,7 +730,11 @@ def _select_candidates(
     omitted: list[OmittedItem] = []
     for candidate in sorted(optional, key=_budget_sort_key):
         range_key = _candidate_range_key(candidate)
-        if range_key is not None and _overlaps_any(range_key, selected_ranges):
+        if (
+            range_key is not None
+            and not candidate.kind.startswith("diagnostic.")
+            and _is_redundant_range(range_key, selected_ranges, goal=goal)
+        ):
             omitted.append(
                 OmittedItem(
                     name=_candidate_name(candidate),
@@ -687,15 +772,23 @@ def _candidate_range_key(candidate: _Candidate) -> tuple[str, int, int] | None:
     return candidate.file, start_line, end_line
 
 
-def _overlaps_any(
+def _is_redundant_range(
     candidate: tuple[str, int, int],
     selected: list[tuple[str, int, int]],
+    *,
+    goal: str,
 ) -> bool:
     candidate_file, candidate_start, candidate_end = candidate
     for selected_file, selected_start, selected_end in selected:
         if candidate_file != selected_file:
             continue
-        if candidate_start <= selected_end and selected_start <= candidate_end:
+        if (
+            goal == "explain"
+            and candidate_start <= selected_end
+            and selected_start <= candidate_end
+        ):
+            return True
+        if candidate_start <= selected_start and candidate_end >= selected_end:
             return True
     return False
 

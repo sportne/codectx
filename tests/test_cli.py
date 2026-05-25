@@ -384,6 +384,59 @@ def test_context_command_reports_missing_index_no_symbol_and_routes_extra_goals(
     assert "- goal: dependencies" in output
 
 
+def test_context_command_generates_failure_modes_bundle(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    _write(
+        repo / "src" / "PaymentService.java",
+        (
+            "class PaymentService {\n"
+            "  boolean authorize() {\n"
+            "    return validatePayment() && helper();\n"
+            "  }\n"
+            "  boolean validatePayment() { throw new IllegalStateException(); }\n"
+            "  boolean helper() { return true; }\n"
+            "}\n"
+        ),
+    )
+    _write(
+        repo / "test" / "PaymentServiceFailureTest.java",
+        (
+            "class PaymentServiceFailureTest {\n"
+            "  void authorize_failsInvalidPayment() {\n"
+            "    new PaymentService().authorize();\n"
+            "  }\n"
+            "}\n"
+        ),
+    )
+    db_path = tmp_path / "graph.sqlite"
+    assert main(["index", str(repo), "--db", str(db_path)]) == 0
+    capsys.readouterr()
+
+    assert (
+        main(
+            [
+                "context",
+                "--symbol",
+                "authorize",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db_path),
+                "--goal",
+                "failure-modes",
+            ]
+        )
+        == 0
+    )
+
+    output = capsys.readouterr().out
+    assert "- goal: failure-modes" in output
+    assert "validatePayment" in output
+    assert "PaymentServiceFailureTest" in output
+
+
 def test_index_and_health_commands_persist_and_display_stats(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

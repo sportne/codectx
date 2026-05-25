@@ -1097,7 +1097,7 @@ Acceptance:
 
 ### T080 — Implement `failure-modes` goal
 
-Status: todo
+Status: done
 
 Depends on: T072, T073
 
