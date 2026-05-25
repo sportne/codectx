@@ -56,11 +56,29 @@ def build_explain_bundle(
     for candidate in enclosing:
         trace.append({"stage": "candidate", "kind": candidate.kind, "required": True})
 
-    optional_candidates = [
+    relationship_candidates = _relationship_candidates(conn, repo_path, anchor, notes)
+    test_candidates = _test_candidates(conn, anchor, _selected_chunk_ids(candidates))
+    base_optional_candidates = [
         *_import_include_candidates(conn, repo_path, anchor),
-        *_sibling_candidates(conn, anchor, _selected_chunk_ids(candidates)),
+        *relationship_candidates,
+        *test_candidates,
     ]
-    trace.append({"stage": "candidates", "optional_count": len(optional_candidates)})
+    optional_candidates = [
+        *base_optional_candidates,
+        *_sibling_candidates(
+            conn,
+            anchor,
+            _selected_chunk_ids([*candidates, *base_optional_candidates]),
+        ),
+    ]
+    trace.append(
+        {
+            "stage": "candidates",
+            "optional_count": len(optional_candidates),
+            "relationship_count": len(relationship_candidates),
+            "test_count": len(test_candidates),
+        }
+    )
 
     selected, omitted = _select_candidates(candidates, optional_candidates, budget)
     items = [
@@ -338,6 +356,206 @@ def _import_include_candidates(
             )
         )
     return candidates
+
+
+def _relationship_candidates(
+    conn: Any,
+    repo: Path,
+    anchor: AnchorResult,
+    notes: list[str],
+) -> list[_Candidate]:
+    if anchor.node_id is None:
+        return []
+    rows = conn.execute(
+        """
+        SELECT edge.id AS edge_id, edge.kind AS edge_kind, edge.unresolved_dst,
+               edge.confidence AS edge_confidence, edge.extractor AS edge_extractor,
+               edge.metadata_json AS edge_metadata_json, dst.id AS dst_id,
+               dst.kind AS dst_kind, dst.name AS dst_name,
+               dst.qualified_name AS dst_qualified_name,
+               dst.symbol_key AS dst_symbol_key, dst.file_id AS dst_file_id,
+               dst.start_line AS dst_start_line, dst.end_line AS dst_end_line,
+               dst.confidence AS dst_confidence, dst.extractor AS dst_extractor,
+               file.path AS dst_file_path
+        FROM edge
+        LEFT JOIN node AS dst ON dst.id = edge.dst_node_id
+        LEFT JOIN file ON file.id = dst.file_id
+        WHERE edge.snapshot_id = ?
+          AND edge.src_node_id = ?
+          AND edge.kind IN ('calls', 'uses_type', 'references')
+        ORDER BY
+          CASE edge.kind
+            WHEN 'calls' THEN 0
+            WHEN 'uses_type' THEN 1
+            WHEN 'references' THEN 2
+            ELSE 3
+          END ASC,
+          edge.start_line ASC,
+          edge.id ASC
+        """,
+        (_snapshot_id_for_file(conn, anchor.file_id), anchor.node_id),
+    ).fetchall()
+    candidates: list[_Candidate] = []
+    for row in rows:
+        if row["dst_id"] is None:
+            unresolved = row["unresolved_dst"]
+            if unresolved is not None:
+                notes.append(
+                    f"Unresolved {row['edge_kind']} relationship from target: "
+                    f"{unresolved}."
+                )
+            continue
+        candidate = _relationship_candidate(conn, repo, row, notes)
+        if candidate is not None:
+            candidates.append(candidate)
+    return candidates
+
+
+def _relationship_candidate(
+    conn: Any,
+    repo: Path,
+    row: Any,
+    notes: list[str],
+) -> _Candidate | None:
+    reason = _relationship_reason(str(row["edge_kind"]))
+    kind = _relationship_kind(str(row["edge_kind"]))
+    score = _relationship_score(str(row["edge_kind"]))
+    if row["dst_file_id"] is not None:
+        chunk = _chunk_for_node(conn, int(row["dst_file_id"]), int(row["dst_id"]))
+        if chunk is not None:
+            return _relationship_from_chunk(chunk, row, kind, reason, score)
+    if (
+        row["dst_file_path"] is None
+        or row["dst_start_line"] is None
+        or row["dst_end_line"] is None
+    ):
+        return None
+    snippet = _source_snippet(
+        repo,
+        str(row["dst_file_path"]),
+        int(row["dst_start_line"]),
+        int(row["dst_end_line"]),
+        notes,
+    )
+    if snippet is None:
+        return None
+    notes.append(f"{reason.title()} used source fallback.")
+    return _Candidate(
+        kind=kind,
+        file=snippet.file_path,
+        line_range=(snippet.start_line, snippet.end_line),
+        text=snippet.text,
+        score=score,
+        token_estimate=snippet.token_estimate,
+        reason=reason,
+        confidence=float(row["edge_confidence"]),
+        extractor=str(row["edge_extractor"]),
+        metadata={
+            **_metadata(str(row["edge_metadata_json"])),
+            "edge_id": int(row["edge_id"]),
+            "edge_kind": str(row["edge_kind"]),
+            "node_id": int(row["dst_id"]),
+            "node_kind": str(row["dst_kind"]),
+            "node_name": None if row["dst_name"] is None else str(row["dst_name"]),
+            "qualified_name": None
+            if row["dst_qualified_name"] is None
+            else str(row["dst_qualified_name"]),
+            "symbol_key": None
+            if row["dst_symbol_key"] is None
+            else str(row["dst_symbol_key"]),
+        },
+    )
+
+
+def _relationship_from_chunk(
+    chunk: Any,
+    edge: Any,
+    kind: str,
+    reason: str,
+    score: float,
+) -> _Candidate:
+    candidate = _chunk_candidate(chunk, kind, reason, score)
+    return _Candidate(
+        kind=candidate.kind,
+        file=candidate.file,
+        line_range=candidate.line_range,
+        text=candidate.text,
+        score=candidate.score,
+        token_estimate=candidate.token_estimate,
+        reason=candidate.reason,
+        confidence=min(candidate.confidence, float(edge["edge_confidence"])),
+        extractor=str(edge["edge_extractor"]),
+        metadata={
+            **candidate.metadata,
+            **_metadata(str(edge["edge_metadata_json"])),
+            "edge_id": int(edge["edge_id"]),
+            "edge_kind": str(edge["edge_kind"]),
+        },
+    )
+
+
+def _relationship_kind(edge_kind: str) -> str:
+    if edge_kind == "calls":
+        return "neighborhood.callee"
+    if edge_kind == "uses_type":
+        return "neighborhood.type"
+    return "neighborhood.reference"
+
+
+def _relationship_reason(edge_kind: str) -> str:
+    if edge_kind == "calls":
+        return "direct callee"
+    if edge_kind == "uses_type":
+        return "referenced type"
+    return "referenced field"
+
+
+def _relationship_score(edge_kind: str) -> float:
+    if edge_kind == "calls":
+        return 3.4
+    if edge_kind == "uses_type":
+        return 3.2
+    return 3.1
+
+
+def _test_candidates(
+    conn: Any,
+    anchor: AnchorResult,
+    selected_chunk_ids: set[int],
+) -> list[_Candidate]:
+    if anchor.node_name is None:
+        return []
+    needle = anchor.node_name.lower()
+    rows = conn.execute(
+        """
+        SELECT chunk.id, chunk.node_id, chunk.kind, chunk.start_line, chunk.end_line,
+               chunk.text, chunk.token_estimate, node.kind AS node_kind,
+               node.name AS node_name, node.qualified_name, node.symbol_key,
+               node.confidence, node.extractor, file.path AS file_path
+        FROM chunk
+        JOIN file ON file.id = chunk.file_id
+        LEFT JOIN node ON node.id = chunk.node_id
+        WHERE file.snapshot_id = ?
+          AND (file.is_test = 1 OR lower(file.path) LIKE '%%test%%')
+          AND (
+            lower(file.path) LIKE ?
+            OR lower(COALESCE(node.name, '')) LIKE ?
+            OR lower(COALESCE(node.qualified_name, '')) LIKE ?
+          )
+        ORDER BY file.path ASC, chunk.start_line ASC, chunk.id ASC
+        """,
+        (
+            _snapshot_id_for_file(conn, anchor.file_id),
+            f"%{needle}%",
+            f"%{needle}%",
+            f"%{needle}%",
+        ),
+    ).fetchall()
+    return [
+        _chunk_candidate(row, "test.related", "related test", 2.8)
+        for row in rows
+        if int(row["id"]) not in selected_chunk_ids
+    ]
 
 
 def _sibling_candidates(

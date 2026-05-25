@@ -931,7 +931,7 @@ Acceptance:
 
 ### T064 — Add neighborhood candidates to `explain`
 
-Status: todo
+Status: done
 
 Depends on: T063, T055
 

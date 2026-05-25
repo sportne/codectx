@@ -4,7 +4,7 @@ from pathlib import Path
 
 from codectx.context.anchors import AnchorResult, resolve_file_line_anchor
 from codectx.context.planner import build_explain_bundle
-from codectx.frontends.base import ChunkFact, NodeFact, OccurrenceFact
+from codectx.frontends.base import ChunkFact, EdgeFact, NodeFact, OccurrenceFact
 from codectx.graph.store import GraphStore
 from codectx.scanner.models import FileRecord
 from codectx.source.spans import SourceSpan
@@ -321,6 +321,89 @@ def test_build_explain_bundle_uses_occurrence_text_when_import_line_is_invalid(
     assert bundle.items[1].text == "bad.hpp"
 
 
+def test_build_explain_bundle_adds_neighborhood_and_test_candidates(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_neighborhood_context_graph(store, repo)
+        anchor = resolve_file_line_anchor(
+            store.conn, snapshot_id, "src/PaymentService.java", 5
+        )
+        assert isinstance(anchor, AnchorResult)
+
+        bundle = build_explain_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=1000,
+            index_health={},
+        )
+
+    assert [item.kind for item in bundle.items] == [
+        "target.definition",
+        "enclosing.type",
+        "neighborhood.callee",
+        "neighborhood.type",
+        "neighborhood.reference",
+        "test.related",
+    ]
+    assert [item.reason for item in bundle.items[2:6]] == [
+        "direct callee",
+        "referenced type",
+        "referenced field",
+        "related test",
+    ]
+    assert bundle.items[2].metadata["edge_kind"] == "calls"
+    assert bundle.items[3].metadata["node_name"] == "Gateway"
+    assert bundle.items[4].metadata["node_name"] == "gateway"
+    assert bundle.items[5].file == "test/PaymentServiceAuthorizeTest.java"
+    assert any("gateway.charge" in note for note in bundle.uncertainty_notes)
+    assert {
+        "stage": "candidates",
+        "optional_count": 4,
+        "relationship_count": 3,
+        "test_count": 1,
+    } in bundle.trace
+
+
+def test_build_explain_bundle_omits_neighborhood_items_when_over_budget(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_neighborhood_context_graph(store, repo)
+        anchor = resolve_file_line_anchor(
+            store.conn, snapshot_id, "src/PaymentService.java", 5
+        )
+        assert isinstance(anchor, AnchorResult)
+
+        bundle = build_explain_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=1,
+            index_health={},
+        )
+
+    assert [item.kind for item in bundle.items] == [
+        "target.definition",
+        "enclosing.type",
+    ]
+    assert [omitted.reason for omitted in bundle.omitted] == [
+        "budget",
+        "budget",
+        "budget",
+        "budget",
+    ]
+    assert bundle.omitted[0].name == "src/PaymentService.java:8"
+    assert bundle.omitted[-1].name == "test/PaymentServiceAuthorizeTest.java:2-4"
+
+
 def _seed_explain_graph(
     store: GraphStore, repo: Path, *, include_type_chunk: bool = True
 ) -> int:
@@ -418,6 +501,228 @@ def _seed_explain_graph(
             ),
         )
     store.insert_chunks(chunks, file_ids, node_ids)
+    return snapshot_id
+
+
+def _seed_neighborhood_context_graph(store: GraphStore, repo: Path) -> int:
+    service_source = (
+        "package acme;\n"
+        "class PaymentService {\n"
+        "  private Gateway gateway;\n"
+        "  boolean authorize() {\n"
+        "    validate();\n"
+        "    return gateway.ready();\n"
+        "  }\n"
+        "  boolean validate() { return true; }\n"
+        "}\n"
+    )
+    gateway_source = "class Gateway {}\n"
+    test_source = (
+        "class PaymentServiceAuthorizeTest {\n"
+        "  void authorize_allowsValidPayment() {\n"
+        "    new PaymentService().authorize();\n"
+        "  }\n"
+        "}\n"
+    )
+    _write(repo / "src" / "PaymentService.java", service_source)
+    _write(repo / "src" / "Gateway.java", gateway_source)
+    _write(repo / "test" / "PaymentServiceAuthorizeTest.java", test_source)
+    store.apply_schema()
+    repo_id = store.create_repo(repo)
+    snapshot_id = store.create_snapshot(repo_id)
+    file_ids = store.insert_files(
+        snapshot_id,
+        [
+            FileRecord(
+                path="src/PaymentService.java",
+                language="java",
+                content_hash="service",
+                size_bytes=len(service_source.encode("utf-8")),
+                line_count=9,
+            ),
+            FileRecord(
+                path="src/Gateway.java",
+                language="java",
+                content_hash="gateway",
+                size_bytes=len(gateway_source.encode("utf-8")),
+                line_count=1,
+            ),
+            FileRecord(
+                path="test/PaymentServiceAuthorizeTest.java",
+                language="java",
+                content_hash="test",
+                size_bytes=len(test_source.encode("utf-8")),
+                line_count=5,
+                is_test=True,
+            ),
+        ],
+    )
+    nodes = [
+        _java_node(
+            "type",
+            "PaymentService",
+            "acme.PaymentService",
+            "java:src/PaymentService.java#PaymentService",
+            "src/PaymentService.java",
+            2,
+            9,
+        ),
+        _java_node(
+            "field",
+            "gateway",
+            "acme.PaymentService.gateway",
+            "java:src/PaymentService.java#PaymentService.gateway",
+            "src/PaymentService.java",
+            3,
+            3,
+        ),
+        _java_node(
+            "callable",
+            "authorize",
+            "acme.PaymentService.authorize()",
+            "java:src/PaymentService.java#PaymentService.authorize()",
+            "src/PaymentService.java",
+            4,
+            7,
+        ),
+        _java_node(
+            "callable",
+            "validate",
+            "acme.PaymentService.validate()",
+            "java:src/PaymentService.java#PaymentService.validate()",
+            "src/PaymentService.java",
+            8,
+            8,
+        ),
+        _java_node(
+            "type",
+            "Gateway",
+            "acme.Gateway",
+            "java:src/Gateway.java#Gateway",
+            "src/Gateway.java",
+            1,
+            1,
+        ),
+        _java_node(
+            "callable",
+            "authorize_allowsValidPayment",
+            "PaymentServiceAuthorizeTest.authorize_allowsValidPayment()",
+            "java:test/PaymentServiceAuthorizeTest.java#authorize_allowsValidPayment()",
+            "test/PaymentServiceAuthorizeTest.java",
+            2,
+            4,
+        ),
+    ]
+    node_ids = store.insert_nodes(snapshot_id, nodes, file_ids)
+    store.insert_edges(
+        snapshot_id,
+        [
+            _edge(
+                "calls",
+                "java:src/PaymentService.java#PaymentService.authorize()",
+                "java:src/PaymentService.java#PaymentService.validate()",
+                "src/PaymentService.java",
+                5,
+            ),
+            _edge(
+                "calls",
+                "java:src/PaymentService.java#PaymentService.authorize()",
+                None,
+                "src/PaymentService.java",
+                6,
+                unresolved_dst="gateway.charge",
+                confidence=0.4,
+            ),
+            _edge(
+                "uses_type",
+                "java:src/PaymentService.java#PaymentService.authorize()",
+                "java:src/Gateway.java#Gateway",
+                "src/PaymentService.java",
+                3,
+            ),
+            _edge(
+                "references",
+                "java:src/PaymentService.java#PaymentService.authorize()",
+                "java:src/PaymentService.java#PaymentService.gateway",
+                "src/PaymentService.java",
+                6,
+            ),
+        ],
+        file_ids,
+        node_ids,
+    )
+    store.insert_chunks(
+        [
+            ChunkFact(
+                file_path="src/PaymentService.java",
+                node_key="java:src/PaymentService.java#PaymentService",
+                kind="definition",
+                start_line=2,
+                end_line=9,
+                text=service_source.split("\n", 1)[1],
+                token_estimate=34,
+            ),
+            ChunkFact(
+                file_path="src/PaymentService.java",
+                node_key="java:src/PaymentService.java#PaymentService.gateway",
+                kind="definition",
+                start_line=3,
+                end_line=3,
+                text="  private Gateway gateway;\n",
+                token_estimate=7,
+            ),
+            ChunkFact(
+                file_path="src/PaymentService.java",
+                node_key="java:src/PaymentService.java#PaymentService.authorize()",
+                kind="definition",
+                start_line=4,
+                end_line=7,
+                text=(
+                    "  boolean authorize() {\n"
+                    "    validate();\n"
+                    "    return gateway.ready();\n"
+                    "  }\n"
+                ),
+                token_estimate=16,
+            ),
+            ChunkFact(
+                file_path="src/PaymentService.java",
+                node_key="java:src/PaymentService.java#PaymentService.validate()",
+                kind="definition",
+                start_line=8,
+                end_line=8,
+                text="  boolean validate() { return true; }\n",
+                token_estimate=9,
+            ),
+            ChunkFact(
+                file_path="src/Gateway.java",
+                node_key="java:src/Gateway.java#Gateway",
+                kind="definition",
+                start_line=1,
+                end_line=1,
+                text=gateway_source,
+                token_estimate=4,
+            ),
+            ChunkFact(
+                file_path="test/PaymentServiceAuthorizeTest.java",
+                node_key=(
+                    "java:test/PaymentServiceAuthorizeTest.java#"
+                    "authorize_allowsValidPayment()"
+                ),
+                kind="definition",
+                start_line=2,
+                end_line=4,
+                text=(
+                    "  void authorize_allowsValidPayment() {\n"
+                    "    new PaymentService().authorize();\n"
+                    "  }\n"
+                ),
+                token_estimate=15,
+            ),
+        ],
+        file_ids,
+        node_ids,
+    )
     return snapshot_id
 
 
@@ -685,6 +990,68 @@ def _node(
         confidence=1.0,
         extractor="test",
         metadata={},
+    )
+
+
+def _java_node(
+    kind: str,
+    name: str,
+    qualified_name: str,
+    symbol_key: str,
+    file_path: str,
+    start_line: int,
+    end_line: int,
+) -> NodeFact:
+    return NodeFact(
+        kind=kind,
+        language="java",
+        name=name,
+        qualified_name=qualified_name,
+        symbol_key=symbol_key,
+        file_path=file_path,
+        span=SourceSpan(
+            file_path=file_path,
+            start_byte=0,
+            end_byte=10,
+            start_line=start_line,
+            start_col=0,
+            end_line=end_line,
+            end_col=1,
+        ),
+        confidence=1.0,
+        extractor="test",
+        metadata={},
+    )
+
+
+def _edge(
+    kind: str,
+    src_key: str,
+    dst_key: str | None,
+    file_path: str,
+    line: int,
+    *,
+    unresolved_dst: str | None = None,
+    confidence: float = 0.8,
+) -> EdgeFact:
+    return EdgeFact(
+        kind=kind,
+        src_key=src_key,
+        dst_key=dst_key,
+        unresolved_src=None,
+        unresolved_dst=unresolved_dst,
+        file_path=file_path,
+        span=SourceSpan(
+            file_path=file_path,
+            start_byte=0,
+            end_byte=10,
+            start_line=line,
+            start_col=0,
+            end_line=line,
+            end_col=10,
+        ),
+        confidence=confidence,
+        extractor="test",
     )
 
 
