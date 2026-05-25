@@ -437,6 +437,53 @@ def test_context_command_generates_failure_modes_bundle(
     assert "PaymentServiceFailureTest" in output
 
 
+def test_context_command_generates_dependencies_bundle(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    _write(
+        repo / "src" / "PaymentService.java",
+        (
+            "import java.util.List;\n"
+            "class PaymentService {\n"
+            "  private Gateway gateway;\n"
+            "  boolean authorize() {\n"
+            "    return gateway.ready() && validate();\n"
+            "  }\n"
+            "  boolean validate() { return true; }\n"
+            "}\n"
+        ),
+    )
+    _write(repo / "src" / "Gateway.java", "class Gateway {}\n")
+    db_path = tmp_path / "graph.sqlite"
+    assert main(["index", str(repo), "--db", str(db_path)]) == 0
+    capsys.readouterr()
+
+    assert (
+        main(
+            [
+                "context",
+                "--symbol",
+                "authorize",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db_path),
+                "--goal",
+                "dependencies",
+                "--format",
+                "text",
+            ]
+        )
+        == 0
+    )
+
+    output = capsys.readouterr().out
+    assert "- goal: dependencies" in output
+    assert "import java.util.List;" in output
+    assert "Gateway" in output
+
+
 def test_index_and_health_commands_persist_and_display_stats(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

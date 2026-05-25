@@ -1118,7 +1118,7 @@ Acceptance:
 
 ### T081 — Implement `dependencies` goal
 
-Status: todo
+Status: done
 
 Depends on: T072, T073
 

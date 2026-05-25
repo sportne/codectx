@@ -150,6 +150,8 @@ def _graph_proximity(candidate: RankingCandidate) -> float:
 
 
 def _goal_relevance(candidate: RankingCandidate, goal: str) -> float:
+    if goal == "dependencies":
+        return _dependency_relevance(candidate)
     if goal != "failure-modes":
         return 0.0
     text = " ".join(
@@ -183,6 +185,60 @@ def _goal_relevance(candidate: RankingCandidate, goal: str) -> float:
     if (
         candidate.metadata.get("edge_kind") == "references"
         and candidate.confidence < 0.6
+    ):
+        return 1.0
+    return 0.0
+
+
+def _dependency_relevance(candidate: RankingCandidate) -> float:
+    edge_kind = candidate.metadata.get("edge_kind")
+    node_kind = candidate.metadata.get("node_kind")
+    if candidate.kind in {"import", "include"}:
+        return 2.0
+    if edge_kind == "uses_type":
+        return 2.4
+    if edge_kind == "references" or node_kind == "field":
+        return 2.0
+    callable_kind = str(candidate.metadata.get("callable_kind") or "").lower()
+    if "constructor" in callable_kind:
+        return 1.6
+    node_name = str(candidate.metadata.get("node_name") or "")
+    qualified_name = str(candidate.metadata.get("qualified_name") or "")
+    if node_name and qualified_name:
+        qualified_parts = [
+            part for part in qualified_name.replace("::", ".").split(".") if part
+        ]
+        if (
+            len(qualified_parts) >= 2
+            and qualified_parts[-2] == node_name
+            and qualified_parts[-1].startswith(f"{node_name}(")
+        ):
+            return 1.6
+    text = " ".join(
+        str(value or "")
+        for value in (
+            candidate.kind,
+            candidate.file_path,
+            candidate.text,
+            candidate.metadata.get("node_name"),
+            candidate.metadata.get("qualified_name"),
+        )
+    ).lower()
+    if edge_kind == "calls" and any(
+        marker in text for marker in ("<init>", "constructor", "create", "init")
+    ):
+        return 1.2
+    if any(
+        marker in text
+        for marker in (
+            "client",
+            "dependency",
+            "factory",
+            "gateway",
+            "provider",
+            "repository",
+            "service",
+        )
     ):
         return 1.0
     return 0.0

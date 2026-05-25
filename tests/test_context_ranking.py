@@ -168,3 +168,100 @@ def test_failure_modes_goal_boosts_error_related_candidates() -> None:
     assert validation.score > helper.score
     assert validation.score_trace["goal_relevance"] == 4.0
     assert "goal_relevance" not in helper.score_trace
+
+
+def test_dependencies_goal_boosts_dependency_shaped_candidates() -> None:
+    anchor = RankingAnchor(file_path="src/PaymentService.java", line=5)
+    used_type = score_candidate(
+        RankingCandidate(
+            kind="neighborhood.type",
+            file_path="src/Gateway.java",
+            line_range=(1, 1),
+            text="class Gateway {}\n",
+            token_estimate=4,
+            confidence=0.8,
+            metadata={
+                "edge_id": 20,
+                "edge_kind": "uses_type",
+                "node_name": "Gateway",
+            },
+        ),
+        anchor,
+        goal="dependencies",
+    )
+    helper_call = score_candidate(
+        RankingCandidate(
+            kind="neighborhood.callee",
+            file_path="src/PaymentService.java",
+            line_range=(8, 8),
+            text="boolean validate() { return true; }\n",
+            token_estimate=8,
+            confidence=0.8,
+            metadata={"edge_id": 21, "edge_kind": "calls", "node_name": "validate"},
+        ),
+        anchor,
+        goal="dependencies",
+    )
+    imported = score_candidate(
+        RankingCandidate(
+            kind="import",
+            file_path="src/PaymentService.java",
+            line_range=(2, 2),
+            text="import java.util.List;\n",
+            token_estimate=6,
+            confidence=0.8,
+        ),
+        anchor,
+        goal="dependencies",
+    )
+
+    assert used_type.score > helper_call.score
+    assert imported.score > helper_call.score
+    assert used_type.score_trace["goal_relevance"] == 2.4
+    assert imported.score_trace["goal_relevance"] == 2.0
+
+
+def test_dependencies_goal_boosts_constructor_like_callees() -> None:
+    anchor = RankingAnchor(file_path="src/main.cpp", line=10)
+
+    constructor = score_candidate(
+        RankingCandidate(
+            kind="neighborhood.callee",
+            file_path="src/Widget.cpp",
+            line_range=(3, 5),
+            text="Widget::Widget() {}\n",
+            token_estimate=6,
+            confidence=0.8,
+            metadata={
+                "edge_id": 30,
+                "edge_kind": "calls",
+                "node_kind": "callable",
+                "node_name": "Widget",
+                "qualified_name": "Widget::Widget()",
+            },
+        ),
+        anchor,
+        goal="dependencies",
+    )
+    regular = score_candidate(
+        RankingCandidate(
+            kind="neighborhood.callee",
+            file_path="src/Widget.cpp",
+            line_range=(7, 7),
+            text="void tick() {}\n",
+            token_estimate=5,
+            confidence=0.8,
+            metadata={
+                "edge_id": 31,
+                "edge_kind": "calls",
+                "node_kind": "callable",
+                "node_name": "tick",
+                "qualified_name": "Widget::tick()",
+            },
+        ),
+        anchor,
+        goal="dependencies",
+    )
+
+    assert constructor.score > regular.score
+    assert constructor.score_trace["goal_relevance"] == 1.6

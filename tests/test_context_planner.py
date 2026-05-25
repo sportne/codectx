@@ -518,6 +518,45 @@ def test_build_failure_modes_bundle_prioritizes_validation_and_failure_tests(
     assert bundle.index_health["diagnostics"] == "1"
 
 
+def test_build_dependencies_bundle_prioritizes_imports_types_and_fields(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_dependencies_graph(store, repo)
+        anchor = resolve_file_line_anchor(
+            store.conn, snapshot_id, "src/PaymentService.java", 5
+        )
+        assert isinstance(anchor, AnchorResult)
+
+        bundle = build_context_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=1000,
+            index_health={},
+            query={"goal": "dependencies", "budget": 1000},
+        )
+
+    item_names = [item.metadata.get("node_name") for item in bundle.items]
+    item_kinds = [item.kind for item in bundle.items]
+    assert "import" in item_kinds
+    assert "neighborhood.type" in item_kinds
+    assert "neighborhood.reference" in item_kinds
+    assert "neighborhood.callee" in item_kinds
+    assert item_names.index("Gateway") < item_names.index("validate")
+    assert item_names.index("gateway") < item_names.index("validate")
+    dependency_items = [
+        item
+        for item in bundle.items
+        if item.kind in {"import", "neighborhood.type", "neighborhood.reference"}
+    ]
+    assert all("goal_relevance" in item.score_trace for item in dependency_items)
+    assert any(item.text == "import java.util.List;\n" for item in dependency_items)
+
+
 def _seed_explain_graph(
     store: GraphStore, repo: Path, *, include_type_chunk: bool = True
 ) -> int:
@@ -1036,6 +1075,201 @@ def _seed_failure_modes_graph(store: GraphStore, repo: Path) -> int:
                     "  }\n"
                 ),
                 token_estimate=15,
+            ),
+        ],
+        file_ids,
+        node_ids,
+    )
+    return snapshot_id
+
+
+def _seed_dependencies_graph(store: GraphStore, repo: Path) -> int:
+    service_source = (
+        "package acme;\n"
+        "import java.util.List;\n"
+        "class PaymentService {\n"
+        "  private Gateway gateway;\n"
+        "  boolean authorize() {\n"
+        "    return gateway.ready() && validate();\n"
+        "  }\n"
+        "  boolean validate() { return true; }\n"
+        "}\n"
+    )
+    gateway_source = "class Gateway {}\n"
+    _write(repo / "src" / "PaymentService.java", service_source)
+    _write(repo / "src" / "Gateway.java", gateway_source)
+    store.apply_schema()
+    repo_id = store.create_repo(repo)
+    snapshot_id = store.create_snapshot(repo_id)
+    file_ids = store.insert_files(
+        snapshot_id,
+        [
+            FileRecord(
+                path="src/PaymentService.java",
+                language="java",
+                content_hash="service-dependencies",
+                size_bytes=len(service_source.encode("utf-8")),
+                line_count=9,
+            ),
+            FileRecord(
+                path="src/Gateway.java",
+                language="java",
+                content_hash="gateway-dependencies",
+                size_bytes=len(gateway_source.encode("utf-8")),
+                line_count=1,
+            ),
+        ],
+    )
+    nodes = [
+        _java_node(
+            "type",
+            "PaymentService",
+            "acme.PaymentService",
+            "java:src/PaymentService.java#PaymentService",
+            "src/PaymentService.java",
+            3,
+            9,
+        ),
+        _java_node(
+            "field",
+            "gateway",
+            "acme.PaymentService.gateway",
+            "java:src/PaymentService.java#PaymentService.gateway",
+            "src/PaymentService.java",
+            4,
+            4,
+        ),
+        _java_node(
+            "callable",
+            "authorize",
+            "acme.PaymentService.authorize()",
+            "java:src/PaymentService.java#PaymentService.authorize()",
+            "src/PaymentService.java",
+            5,
+            7,
+        ),
+        _java_node(
+            "callable",
+            "validate",
+            "acme.PaymentService.validate()",
+            "java:src/PaymentService.java#PaymentService.validate()",
+            "src/PaymentService.java",
+            8,
+            8,
+        ),
+        _java_node(
+            "type",
+            "Gateway",
+            "acme.Gateway",
+            "java:src/Gateway.java#Gateway",
+            "src/Gateway.java",
+            1,
+            1,
+        ),
+    ]
+    node_ids = store.insert_nodes(snapshot_id, nodes, file_ids)
+    store.insert_occurrences(
+        [
+            OccurrenceFact(
+                file_path="src/PaymentService.java",
+                role="import",
+                text="java.util.List",
+                span=SourceSpan(
+                    file_path="src/PaymentService.java",
+                    start_byte=14,
+                    end_byte=36,
+                    start_line=2,
+                    start_col=0,
+                    end_line=2,
+                    end_col=22,
+                ),
+                node_key=None,
+                resolved_key=None,
+                confidence=0.8,
+                extractor="test",
+            )
+        ],
+        file_ids,
+        node_ids,
+    )
+    store.insert_edges(
+        snapshot_id,
+        [
+            _edge(
+                "uses_type",
+                "java:src/PaymentService.java#PaymentService.authorize()",
+                "java:src/Gateway.java#Gateway",
+                "src/PaymentService.java",
+                4,
+            ),
+            _edge(
+                "references",
+                "java:src/PaymentService.java#PaymentService.authorize()",
+                "java:src/PaymentService.java#PaymentService.gateway",
+                "src/PaymentService.java",
+                6,
+            ),
+            _edge(
+                "calls",
+                "java:src/PaymentService.java#PaymentService.authorize()",
+                "java:src/PaymentService.java#PaymentService.validate()",
+                "src/PaymentService.java",
+                6,
+            ),
+        ],
+        file_ids,
+        node_ids,
+    )
+    store.insert_chunks(
+        [
+            ChunkFact(
+                file_path="src/PaymentService.java",
+                node_key="java:src/PaymentService.java#PaymentService",
+                kind="definition",
+                start_line=3,
+                end_line=9,
+                text=service_source.split("\n", 2)[2],
+                token_estimate=34,
+            ),
+            ChunkFact(
+                file_path="src/PaymentService.java",
+                node_key="java:src/PaymentService.java#PaymentService.gateway",
+                kind="definition",
+                start_line=4,
+                end_line=4,
+                text="  private Gateway gateway;\n",
+                token_estimate=7,
+            ),
+            ChunkFact(
+                file_path="src/PaymentService.java",
+                node_key="java:src/PaymentService.java#PaymentService.authorize()",
+                kind="definition",
+                start_line=5,
+                end_line=7,
+                text=(
+                    "  boolean authorize() {\n"
+                    "    return gateway.ready() && validate();\n"
+                    "  }\n"
+                ),
+                token_estimate=15,
+            ),
+            ChunkFact(
+                file_path="src/PaymentService.java",
+                node_key="java:src/PaymentService.java#PaymentService.validate()",
+                kind="definition",
+                start_line=8,
+                end_line=8,
+                text="  boolean validate() { return true; }\n",
+                token_estimate=9,
+            ),
+            ChunkFact(
+                file_path="src/Gateway.java",
+                node_key="java:src/Gateway.java#Gateway",
+                kind="definition",
+                start_line=1,
+                end_line=1,
+                text=gateway_source,
+                token_estimate=4,
             ),
         ],
         file_ids,
