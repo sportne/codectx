@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from codectx.frontends.base import (
@@ -83,6 +83,7 @@ def run_index(
         nodes, edges, occurrences, chunks, diagnostics = extract_graph_facts(
             repo_path, records, frontend_registry
         )
+        edges, occurrences = resolve_unique_references(nodes, edges, occurrences)
         node_ids = store.insert_nodes(snapshot_id, nodes, file_ids)
         store.insert_edges(snapshot_id, edges, file_ids, node_ids)
         store.insert_occurrences(occurrences, file_ids, node_ids)
@@ -187,6 +188,78 @@ def extract_graph_facts(
         chunks.extend(facts.chunks)
         diagnostics.extend(facts.diagnostics)
     return nodes, edges, occurrences, chunks, diagnostics
+
+
+def resolve_unique_references(
+    nodes: list[NodeFact],
+    edges: list[EdgeFact],
+    occurrences: list[OccurrenceFact],
+) -> tuple[list[EdgeFact], list[OccurrenceFact]]:
+    """Resolve heuristic reference facts when text has one project-wide target."""
+    references = _unique_type_reference_map(nodes)
+    resolved_edges = [_resolve_edge_reference(edge, references) for edge in edges]
+    resolved_occurrences = [
+        _resolve_occurrence_reference(occurrence, references)
+        for occurrence in occurrences
+    ]
+    return resolved_edges, resolved_occurrences
+
+
+def _unique_type_reference_map(nodes: list[NodeFact]) -> dict[tuple[str, str], str]:
+    candidates: dict[tuple[str, str], set[str]] = {}
+    for node in nodes:
+        if node.symbol_key is None or node.kind != "type" or node.language is None:
+            continue
+        for name in _reference_names(node):
+            candidates.setdefault((node.language, name), set()).add(node.symbol_key)
+    return {
+        name: next(iter(keys)) for name, keys in candidates.items() if len(keys) == 1
+    }
+
+
+def _reference_names(node: NodeFact) -> set[str]:
+    names = {value for value in (node.name, node.qualified_name) if value}
+    if node.qualified_name:
+        names.add(node.qualified_name.split(".")[-1].split("::")[-1])
+    return names
+
+
+def _resolve_edge_reference(
+    edge: EdgeFact, references: dict[tuple[str, str], str]
+) -> EdgeFact:
+    if edge.kind != "uses_type":
+        return edge
+    if edge.dst_key is not None or edge.unresolved_dst is None:
+        return edge
+    language = _symbol_key_language(edge.src_key)
+    if language is None:
+        return edge
+    resolved_key = references.get((language, edge.unresolved_dst))
+    if resolved_key is None:
+        return edge
+    return replace(edge, dst_key=resolved_key, unresolved_dst=None)
+
+
+def _resolve_occurrence_reference(
+    occurrence: OccurrenceFact, references: dict[tuple[str, str], str]
+) -> OccurrenceFact:
+    if occurrence.role != "type_reference":
+        return occurrence
+    if occurrence.resolved_key is not None:
+        return occurrence
+    language = _symbol_key_language(occurrence.node_key)
+    if language is None:
+        return occurrence
+    resolved_key = references.get((language, occurrence.text))
+    if resolved_key is None:
+        return occurrence
+    return replace(occurrence, resolved_key=resolved_key)
+
+
+def _symbol_key_language(symbol_key: str | None) -> str | None:
+    if symbol_key is None or ":" not in symbol_key:
+        return None
+    return symbol_key.split(":", 1)[0]
 
 
 def remove_db_files(db_path: Path) -> None:

@@ -886,7 +886,7 @@ Acceptance:
 
 ### T062 — Extract Java/C++ references to types and fields heuristically
 
-Status: todo
+Status: done
 
 Depends on: T060, T061
 

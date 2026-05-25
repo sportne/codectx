@@ -321,5 +321,89 @@ def test_java_frontend_leaves_ambiguous_same_class_calls_unresolved() -> None:
     }
 
 
+def test_java_frontend_extracts_type_and_field_references() -> None:
+    frontend = JavaTreeSitterFrontend()
+    source = b"""class PaymentService {
+    private Gateway gateway;
+    Receipt authorize(User user) {
+        this.gateway = gateway;
+        return new Receipt();
+    }
+}
+class Gateway {}
+class Receipt {}
+class User {}
+"""
+
+    facts = frontend.extract("src/PaymentService.java", source)
+
+    type_occurrences = [
+        occurrence
+        for occurrence in facts.occurrences
+        if occurrence.role == "type_reference"
+    ]
+    assert [
+        (occurrence.text, occurrence.node_key, occurrence.span.start_line)
+        for occurrence in type_occurrences
+    ] == [
+        ("Gateway", "java:src/PaymentService.java#PaymentService.gateway", 2),
+        ("Receipt", "java:src/PaymentService.java#PaymentService.authorize(User)", 3),
+        ("User", "java:src/PaymentService.java#PaymentService.authorize(User)", 3),
+        ("Receipt", "java:src/PaymentService.java#PaymentService.authorize(User)", 5),
+    ]
+
+    field_occurrence = next(
+        occurrence
+        for occurrence in facts.occurrences
+        if occurrence.role == "field_reference"
+    )
+    assert field_occurrence.text == "gateway"
+    assert field_occurrence.resolved_key == (
+        "java:src/PaymentService.java#PaymentService.gateway"
+    )
+
+    assert {
+        (edge.kind, edge.dst_key, edge.unresolved_dst)
+        for edge in facts.edges
+        if edge.kind in {"references", "uses_type"}
+    } >= {
+        ("uses_type", None, "Gateway"),
+        ("uses_type", None, "Receipt"),
+        ("uses_type", None, "User"),
+        (
+            "references",
+            "java:src/PaymentService.java#PaymentService.gateway",
+            None,
+        ),
+    }
+
+
+def test_java_frontend_does_not_resolve_qualified_field_receiver_as_this() -> None:
+    frontend = JavaTreeSitterFrontend()
+    source = b"""class PaymentService {
+    private Gateway gateway;
+    void copy(PaymentService other) {
+        other.gateway.connect();
+        this.gateway.connect();
+    }
+}
+class Gateway { void connect() {} }
+"""
+
+    facts = frontend.extract("src/PaymentService.java", source)
+
+    field_occurrences = [
+        occurrence
+        for occurrence in facts.occurrences
+        if occurrence.role == "field_reference"
+    ]
+    assert [
+        (occurrence.text, occurrence.resolved_key) for occurrence in field_occurrences
+    ] == [
+        ("gateway", None),
+        ("gateway", "java:src/PaymentService.java#PaymentService.gateway"),
+    ]
+
+
 def _span_text(source: bytes, span) -> str:
     return source[span.start_byte : span.end_byte].decode("utf-8")

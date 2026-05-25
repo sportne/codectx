@@ -258,6 +258,83 @@ void target(void (*helper)()) {
     ]
 
 
+def test_cpp_frontend_extracts_type_and_field_references() -> None:
+    frontend = CppTreeSitterFrontend()
+    source = b"""class Gateway {};
+class Receipt {};
+class User {};
+class PaymentService {
+    Gateway gateway_;
+    Receipt authorize(User user) {
+        gateway_.charge(user);
+        return Receipt();
+    }
+};
+"""
+
+    facts = frontend.extract("src/payment.cpp", source)
+
+    type_occurrences = [
+        occurrence
+        for occurrence in facts.occurrences
+        if occurrence.role == "type_reference"
+    ]
+    assert [
+        (occurrence.text, occurrence.node_key, occurrence.span.start_line)
+        for occurrence in type_occurrences
+    ] == [
+        ("Gateway", "cpp:src/payment.cpp#PaymentService::gateway_", 5),
+        ("Receipt", "cpp:src/payment.cpp#PaymentService::authorize(User)", 6),
+        ("User", "cpp:src/payment.cpp#PaymentService::authorize(User)", 6),
+    ]
+
+    field_occurrence = next(
+        occurrence
+        for occurrence in facts.occurrences
+        if occurrence.role == "field_reference"
+    )
+    assert field_occurrence.text == "gateway_"
+    assert field_occurrence.resolved_key == (
+        "cpp:src/payment.cpp#PaymentService::gateway_"
+    )
+
+    assert {
+        (edge.kind, edge.dst_key, edge.unresolved_dst)
+        for edge in facts.edges
+        if edge.kind in {"references", "uses_type"}
+    } >= {
+        ("uses_type", None, "Gateway"),
+        ("uses_type", None, "Receipt"),
+        ("uses_type", None, "User"),
+        ("references", "cpp:src/payment.cpp#PaymentService::gateway_", None),
+    }
+
+
+def test_cpp_frontend_does_not_resolve_shadowed_field_receiver() -> None:
+    frontend = CppTreeSitterFrontend()
+    source = b"""class Gateway { void charge(); };
+class PaymentService {
+    Gateway gateway_;
+    void authorize(Gateway gateway_) {
+        gateway_.charge();
+    }
+};
+"""
+
+    facts = frontend.extract("src/payment.cpp", source)
+
+    field_occurrences = [
+        occurrence
+        for occurrence in facts.occurrences
+        if occurrence.role == "field_reference"
+    ]
+    assert [
+        (occurrence.text, occurrence.resolved_key) for occurrence in field_occurrences
+    ] == [
+        ("gateway_", None),
+    ]
+
+
 def test_cpp_frontend_uses_signatures_for_overloaded_callables() -> None:
     frontend = CppTreeSitterFrontend()
 

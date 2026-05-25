@@ -232,6 +232,7 @@ def _extract_type(
     if body is None:
         return
     callable_index = _callable_resolution_index(body, file_path, source, local_name)
+    field_index = _field_resolution_index(body, file_path, source, local_name)
     for child in body.named_children:
         if child.type in {"method_declaration", "constructor_declaration"}:
             _extract_callable(
@@ -245,6 +246,7 @@ def _extract_type(
                 occurrences=occurrences,
                 chunks=chunks,
                 callable_index=callable_index,
+                field_index=field_index,
             )
         elif child.type == "field_declaration":
             _extract_fields(
@@ -284,6 +286,7 @@ def _extract_callable(
     occurrences: list[OccurrenceFact],
     chunks: list[ChunkFact],
     callable_index: dict[tuple[str, int], str],
+    field_index: dict[str, str],
 ) -> None:
     name_node = first_child_by_field_name(node, "name")
     if name_node is None:
@@ -329,6 +332,33 @@ def _extract_callable(
         node=node,
         source_key=key,
         callable_index=callable_index,
+        edges=edges,
+        occurrences=occurrences,
+    )
+    _extract_type_references(
+        file_path=file_path,
+        source=source,
+        owner_key=key,
+        nodes=_callable_type_reference_nodes(node),
+        edges=edges,
+        occurrences=occurrences,
+        reference_kind="callable_signature",
+    )
+    _extract_type_references(
+        file_path=file_path,
+        source=source,
+        owner_key=key,
+        nodes=_body_type_reference_nodes(node),
+        edges=edges,
+        occurrences=occurrences,
+        reference_kind="body",
+    )
+    _extract_field_references(
+        file_path=file_path,
+        source=source,
+        node=node,
+        owner_key=key,
+        field_index=field_index,
         edges=edges,
         occurrences=occurrences,
     )
@@ -410,6 +440,15 @@ def _extract_fields(
                 file_path, source, (owner_local_name,), local_name, declarator
             )
         )
+        _extract_type_references(
+            file_path=file_path,
+            source=source,
+            owner_key=key,
+            nodes=_field_type_reference_nodes(node),
+            edges=edges,
+            occurrences=occurrences,
+            reference_kind="field_type",
+        )
 
 
 def _field_declarators(node: Node) -> Iterator[Node]:
@@ -436,6 +475,24 @@ def _callable_resolution_index(
             _symbol_key(file_path, local_name)
         )
     return {key: keys[0] for key, keys in candidates.items() if len(keys) == 1}
+
+
+def _field_resolution_index(
+    body: Node, file_path: str, source: bytes, owner_local_name: str
+) -> dict[str, str]:
+    candidates: dict[str, list[str]] = {}
+    for child in body.named_children:
+        if child.type != "field_declaration":
+            continue
+        for declarator in _field_declarators(child):
+            name_node = first_child_by_field_name(declarator, "name")
+            if name_node is None:
+                continue
+            name = node_text(source, name_node)
+            candidates.setdefault(name, []).append(
+                _symbol_key(file_path, f"{owner_local_name}.{name}")
+            )
+    return {name: keys[0] for name, keys in candidates.items() if len(keys) == 1}
 
 
 def _extract_call_like_occurrences(
@@ -562,6 +619,156 @@ def _argument_count(arguments: Node) -> int:
     return len(arguments.named_children)
 
 
+def _extract_type_references(
+    *,
+    file_path: str,
+    source: bytes,
+    owner_key: str,
+    nodes: Iterator[Node],
+    edges: list[EdgeFact],
+    occurrences: list[OccurrenceFact],
+    reference_kind: str,
+) -> None:
+    seen: set[tuple[int, int]] = set()
+    for type_node in nodes:
+        key = (type_node.start_byte, type_node.end_byte)
+        if key in seen:
+            continue
+        seen.add(key)
+        text = _type_reference_text(source, type_node)
+        if text in _JAVA_BUILTIN_TYPES:
+            continue
+        span = node_span(file_path, source, type_node)
+        occurrences.append(
+            OccurrenceFact(
+                file_path=file_path,
+                role="type_reference",
+                text=text,
+                span=span,
+                node_key=owner_key,
+                resolved_key=None,
+                confidence=0.5,
+                extractor=EXTRACTOR,
+                metadata={"reference_kind": reference_kind},
+            )
+        )
+        edges.append(
+            EdgeFact(
+                kind="uses_type",
+                src_key=owner_key,
+                dst_key=None,
+                unresolved_src=None,
+                unresolved_dst=text,
+                file_path=file_path,
+                span=span,
+                confidence=0.5,
+                extractor=EXTRACTOR,
+                metadata={"reference_kind": reference_kind},
+            )
+        )
+
+
+def _extract_field_references(
+    *,
+    file_path: str,
+    source: bytes,
+    node: Node,
+    owner_key: str,
+    field_index: dict[str, str],
+    edges: list[EdgeFact],
+    occurrences: list[OccurrenceFact],
+) -> None:
+    for field_access in _descendants_of_type(node, "field_access"):
+        name_node = first_child_by_field_name(field_access, "field")
+        if name_node is None:
+            name_node = next(
+                (
+                    child
+                    for child in reversed(field_access.named_children)
+                    if child.type == "identifier"
+                ),
+                None,
+            )
+        if name_node is None:
+            continue
+        name = node_text(source, name_node)
+        object_node = first_child_by_field_name(field_access, "object")
+        is_current_instance = object_node is not None and object_node.type == "this"
+        resolved_key = field_index.get(name) if is_current_instance else None
+        span = node_span(file_path, source, name_node)
+        occurrences.append(
+            OccurrenceFact(
+                file_path=file_path,
+                role="field_reference",
+                text=name,
+                span=span,
+                node_key=owner_key,
+                resolved_key=resolved_key,
+                confidence=0.6 if resolved_key is not None else 0.4,
+                extractor=EXTRACTOR,
+                metadata={"reference_kind": "field_access"},
+            )
+        )
+        edges.append(
+            EdgeFact(
+                kind="references",
+                src_key=owner_key,
+                dst_key=resolved_key,
+                unresolved_src=None,
+                unresolved_dst=None if resolved_key is not None else name,
+                file_path=file_path,
+                span=node_span(file_path, source, field_access),
+                confidence=0.6 if resolved_key is not None else 0.4,
+                extractor=EXTRACTOR,
+                metadata={"reference_kind": "field_access"},
+            )
+        )
+
+
+def _field_type_reference_nodes(node: Node) -> Iterator[Node]:
+    for child in node.named_children:
+        if child.type in _JAVA_TYPE_NODE_TYPES:
+            yield child
+            return
+
+
+def _callable_type_reference_nodes(node: Node) -> Iterator[Node]:
+    for child in node.named_children:
+        if child.type in _JAVA_TYPE_NODE_TYPES:
+            yield child
+        elif child.type == "formal_parameters":
+            for parameter in child.named_children:
+                type_node = first_child_by_field_name(parameter, "type")
+                if type_node is not None:
+                    yield type_node
+
+
+def _body_type_reference_nodes(node: Node) -> Iterator[Node]:
+    for child in node.named_children:
+        if child.type == "object_creation_expression":
+            type_node = first_child_by_field_name(child, "type")
+            if type_node is not None:
+                yield type_node
+            continue
+        if child.type in {"formal_parameters", "class_body"} or _is_type_node(child):
+            continue
+        yield from _body_type_reference_nodes(child)
+
+
+def _descendants_of_type(node: Node, type_name: str) -> Iterator[Node]:
+    for child in node.named_children:
+        if child.type == type_name:
+            yield child
+        yield from _descendants_of_type(child, type_name)
+
+
+def _type_reference_text(source: bytes, node: Node) -> str:
+    text = node_text(source, node)
+    if "<" in text:
+        return text.split("<", 1)[0].strip()
+    return text
+
+
 def _definition_occurrence(
     file_path: str, source: bytes, name_node: Node, key: str, role: str
 ) -> OccurrenceFact:
@@ -609,3 +816,22 @@ def _is_type_node(node: Node) -> bool:
 
 def _symbol_key(file_path: str, local_name: str) -> str:
     return f"java:{file_path}#{local_name}"
+
+
+_JAVA_TYPE_NODE_TYPES = {
+    "type_identifier",
+    "generic_type",
+    "scoped_type_identifier",
+}
+
+_JAVA_BUILTIN_TYPES = {
+    "boolean",
+    "byte",
+    "char",
+    "double",
+    "float",
+    "int",
+    "long",
+    "short",
+    "void",
+}

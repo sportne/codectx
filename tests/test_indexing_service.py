@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from codectx.frontends.base import ExtractedFacts
+from codectx.frontends.base import EdgeFact, ExtractedFacts, NodeFact, OccurrenceFact
 from codectx.graph.store import GraphStore
 from codectx.indexing import (
     HealthResult,
@@ -12,8 +12,10 @@ from codectx.indexing import (
     default_frontends,
     read_health,
     remove_db_files,
+    resolve_unique_references,
     run_index,
 )
+from codectx.source.spans import SourceSpan
 
 
 def test_run_index_and_read_health_round_trip(tmp_path: Path) -> None:
@@ -229,6 +231,189 @@ def test_run_index_persists_cpp_call_like_facts(tmp_path: Path) -> None:
             ("validate", True),
             ("gateway.charge", False),
         ]
+
+
+def test_run_index_resolves_unique_type_references_and_preserves_ambiguous(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    _write(
+        repo / "src" / "PaymentService.java",
+        "class PaymentService {\n"
+        "  Gateway gateway;\n"
+        "  Receipt authorize(User user) { return new Receipt(); }\n"
+        "}\n"
+        "class Gateway {}\n"
+        "class Receipt {}\n"
+        "class User {}\n",
+    )
+    _write(
+        repo / "src" / "Duplicate.java",
+        "class Duplicate { Missing missing; }\n",
+    )
+    db_path = tmp_path / "graph.sqlite"
+
+    result = run_index(repo, db_path=db_path)
+
+    assert isinstance(result, IndexResult)
+    assert int(result.stats["unresolved_references"]) >= 1
+
+    with GraphStore(db_path) as store:
+        rows = store.conn.execute(
+            """
+            SELECT occurrence.text, resolved.symbol_key AS resolved_key
+            FROM occurrence
+            LEFT JOIN node AS resolved ON resolved.id = occurrence.resolved_node_id
+            WHERE occurrence.role = 'type_reference'
+            ORDER BY occurrence.text, occurrence.start_line
+            """
+        ).fetchall()
+        resolved = {
+            row["text"]: row["resolved_key"]
+            for row in rows
+            if row["resolved_key"] is not None
+        }
+        assert resolved["Gateway"] == "java:src/PaymentService.java#Gateway"
+        assert resolved["Receipt"] == "java:src/PaymentService.java#Receipt"
+        assert resolved["User"] == "java:src/PaymentService.java#User"
+        assert any(
+            row["text"] == "Missing" and row["resolved_key"] is None for row in rows
+        )
+
+        edge_rows = store.conn.execute(
+            """
+            SELECT edge.unresolved_dst, dst.symbol_key AS dst_key
+            FROM edge
+            LEFT JOIN node AS dst ON dst.id = edge.dst_node_id
+            WHERE edge.kind = 'uses_type'
+            ORDER BY edge.unresolved_dst, dst.symbol_key
+            """
+        ).fetchall()
+        assert any(
+            row["dst_key"] == "java:src/PaymentService.java#Gateway"
+            for row in edge_rows
+        )
+        assert any(row["unresolved_dst"] == "Missing" for row in edge_rows)
+
+
+def test_resolve_unique_references_leaves_ambiguous_reference_text_unresolved() -> None:
+    span = SourceSpan("src/Foo.java", 0, 3, 1, 0, 1, 3)
+    nodes = [
+        NodeFact(
+            kind="type",
+            language="java",
+            name="Shared",
+            qualified_name="a.Shared",
+            symbol_key="java:src/A.java#Shared",
+            file_path="src/A.java",
+            span=span,
+            confidence=1.0,
+            extractor="test",
+        ),
+        NodeFact(
+            kind="type",
+            language="java",
+            name="Shared",
+            qualified_name="b.Shared",
+            symbol_key="java:src/B.java#Shared",
+            file_path="src/B.java",
+            span=span,
+            confidence=1.0,
+            extractor="test",
+        ),
+    ]
+    edges = [
+        EdgeFact(
+            kind="uses_type",
+            src_key=None,
+            dst_key=None,
+            unresolved_src=None,
+            unresolved_dst="Shared",
+            file_path="src/Foo.java",
+            span=span,
+            confidence=0.5,
+            extractor="test",
+        )
+    ]
+    occurrences = [
+        OccurrenceFact(
+            file_path="src/Foo.java",
+            role="type_reference",
+            text="Shared",
+            span=span,
+            node_key=None,
+            resolved_key=None,
+            confidence=0.5,
+            extractor="test",
+        )
+    ]
+
+    resolved_edges, resolved_occurrences = resolve_unique_references(
+        nodes, edges, occurrences
+    )
+
+    assert resolved_edges == edges
+    assert resolved_occurrences == occurrences
+
+
+def test_resolve_unique_references_uses_language_and_type_kind() -> None:
+    span = SourceSpan("src/Foo.java", 0, 3, 1, 0, 1, 3)
+    nodes = [
+        NodeFact(
+            kind="type",
+            language="cpp",
+            name="Result",
+            qualified_name="Result",
+            symbol_key="cpp:src/result.cpp#Result",
+            file_path="src/result.cpp",
+            span=span,
+            confidence=1.0,
+            extractor="test",
+        ),
+        NodeFact(
+            kind="field",
+            language="java",
+            name="Result",
+            qualified_name="Foo.Result",
+            symbol_key="java:src/Foo.java#Foo.Result",
+            file_path="src/Foo.java",
+            span=span,
+            confidence=1.0,
+            extractor="test",
+        ),
+    ]
+    edges = [
+        EdgeFact(
+            kind="uses_type",
+            src_key="java:src/Foo.java#Foo",
+            dst_key=None,
+            unresolved_src=None,
+            unresolved_dst="Result",
+            file_path="src/Foo.java",
+            span=span,
+            confidence=0.5,
+            extractor="test",
+        )
+    ]
+    occurrences = [
+        OccurrenceFact(
+            file_path="src/Foo.java",
+            role="type_reference",
+            text="Result",
+            span=span,
+            node_key="java:src/Foo.java#Foo",
+            resolved_key=None,
+            confidence=0.5,
+            extractor="test",
+        )
+    ]
+
+    resolved_edges, resolved_occurrences = resolve_unique_references(
+        nodes, edges, occurrences
+    )
+
+    assert resolved_edges == edges
+    assert resolved_occurrences == occurrences
 
 
 def test_run_index_uses_supplied_frontend_registry(tmp_path: Path) -> None:

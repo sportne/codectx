@@ -49,6 +49,7 @@ class CppTreeSitterFrontend:
         occurrences: list[OccurrenceFact] = []
         chunks: list[ChunkFact] = []
         callable_index = _callable_resolution_index(parsed.root, source)
+        field_index = _field_resolution_index(parsed.root, source)
 
         _extract_children(
             file_path=file_path,
@@ -56,6 +57,7 @@ class CppTreeSitterFrontend:
             parent=parsed.root,
             scope=(),
             callable_index=callable_index,
+            field_index=field_index,
             nodes=nodes,
             edges=edges,
             occurrences=occurrences,
@@ -108,6 +110,7 @@ def _extract_children(
     parent: Node,
     scope: tuple[str, ...],
     callable_index: dict[tuple[tuple[str, ...], str, int], str],
+    field_index: dict[tuple[tuple[str, ...], str], str],
     nodes: list[NodeFact],
     edges: list[EdgeFact],
     occurrences: list[OccurrenceFact],
@@ -123,6 +126,7 @@ def _extract_children(
                 node=child,
                 scope=scope,
                 callable_index=callable_index,
+                field_index=field_index,
                 nodes=nodes,
                 edges=edges,
                 occurrences=occurrences,
@@ -135,6 +139,7 @@ def _extract_children(
                 node=child,
                 scope=scope,
                 callable_index=callable_index,
+                field_index=field_index,
                 nodes=nodes,
                 edges=edges,
                 occurrences=occurrences,
@@ -147,6 +152,7 @@ def _extract_children(
                 node=child,
                 scope=scope,
                 callable_index=callable_index,
+                field_index=field_index,
                 nodes=nodes,
                 edges=edges,
                 occurrences=occurrences,
@@ -219,6 +225,7 @@ def _extract_namespace(
     node: Node,
     scope: tuple[str, ...],
     callable_index: dict[tuple[tuple[str, ...], str, int], str],
+    field_index: dict[tuple[tuple[str, ...], str], str],
     nodes: list[NodeFact],
     edges: list[EdgeFact],
     occurrences: list[OccurrenceFact],
@@ -266,6 +273,7 @@ def _extract_namespace(
             parent=body,
             scope=(*scope, name),
             callable_index=callable_index,
+            field_index=field_index,
             nodes=nodes,
             edges=edges,
             occurrences=occurrences,
@@ -280,6 +288,7 @@ def _extract_type(
     node: Node,
     scope: tuple[str, ...],
     callable_index: dict[tuple[tuple[str, ...], str, int], str],
+    field_index: dict[tuple[tuple[str, ...], str], str],
     nodes: list[NodeFact],
     edges: list[EdgeFact],
     occurrences: list[OccurrenceFact],
@@ -328,6 +337,7 @@ def _extract_type(
             parent=body,
             scope=(*scope, name),
             callable_index=callable_index,
+            field_index=field_index,
             nodes=nodes,
             edges=edges,
             occurrences=occurrences,
@@ -342,6 +352,7 @@ def _extract_type_members(
     parent: Node,
     scope: tuple[str, ...],
     callable_index: dict[tuple[tuple[str, ...], str, int], str],
+    field_index: dict[tuple[tuple[str, ...], str], str],
     nodes: list[NodeFact],
     edges: list[EdgeFact],
     occurrences: list[OccurrenceFact],
@@ -355,6 +366,7 @@ def _extract_type_members(
                 node=child,
                 scope=scope,
                 callable_index=callable_index,
+                field_index=field_index,
                 nodes=nodes,
                 edges=edges,
                 occurrences=occurrences,
@@ -367,6 +379,7 @@ def _extract_type_members(
                 node=child,
                 scope=scope,
                 callable_index=callable_index,
+                field_index=field_index,
                 nodes=nodes,
                 edges=edges,
                 occurrences=occurrences,
@@ -381,6 +394,7 @@ def _extract_type_members(
                     node=child,
                     scope=scope,
                     callable_index=callable_index,
+                    field_index=field_index,
                     nodes=nodes,
                     edges=edges,
                     occurrences=occurrences,
@@ -400,6 +414,7 @@ def _extract_callable(
     node: Node,
     scope: tuple[str, ...],
     callable_index: dict[tuple[tuple[str, ...], str, int], str],
+    field_index: dict[tuple[tuple[str, ...], str], str],
     nodes: list[NodeFact],
     edges: list[EdgeFact],
     occurrences: list[OccurrenceFact],
@@ -459,6 +474,26 @@ def _extract_callable(
         edges=edges,
         occurrences=occurrences,
     )
+    _extract_type_references(
+        file_path=file_path,
+        source=source,
+        owner_key=key,
+        nodes=_callable_type_reference_nodes(node, declarator),
+        edges=edges,
+        occurrences=occurrences,
+        reference_kind="callable_signature",
+    )
+    _extract_field_references(
+        file_path=file_path,
+        source=source,
+        node=node,
+        scope=scope,
+        owner_key=key,
+        field_index=field_index,
+        shadowed_names=_call_shadow_names(node, declarator, source),
+        edges=edges,
+        occurrences=occurrences,
+    )
 
 
 def _callable_resolution_index(
@@ -466,6 +501,14 @@ def _callable_resolution_index(
 ) -> dict[tuple[tuple[str, ...], str, int], str]:
     candidates: dict[tuple[tuple[str, ...], str, int], list[str]] = {}
     _collect_callable_candidates(root, source, (), candidates)
+    return {key: keys[0] for key, keys in candidates.items() if len(keys) == 1}
+
+
+def _field_resolution_index(
+    root: Node, source: bytes
+) -> dict[tuple[tuple[str, ...], str], str]:
+    candidates: dict[tuple[tuple[str, ...], str], list[str]] = {}
+    _collect_field_candidates(root, source, (), candidates)
     return {key: keys[0] for key, keys in candidates.items() if len(keys) == 1}
 
 
@@ -511,6 +554,41 @@ def _collect_callable_candidates(
                 (scope, simple_name, _argument_count_for_parameters(declarator)),
                 [],
             ).append(_symbol_key("", qualified_name))
+
+
+def _collect_field_candidates(
+    parent: Node,
+    source: bytes,
+    scope: tuple[str, ...],
+    candidates: dict[tuple[tuple[str, ...], str], list[str]],
+) -> None:
+    for child in parent.named_children:
+        if child.type == "namespace_definition":
+            name_node = _namespace_name_node(child)
+            child_scope = (
+                (*scope, node_text(source, name_node))
+                if name_node is not None
+                else scope
+            )
+            body = first_child_by_field_name(child, "body")
+            if body is not None:
+                _collect_field_candidates(body, source, child_scope, candidates)
+        elif _is_type_node(child):
+            name_node = _type_name_node(child)
+            child_scope = (
+                (*scope, node_text(source, name_node))
+                if name_node is not None
+                else scope
+            )
+            body = first_child_by_field_name(child, "body")
+            if body is not None:
+                _collect_field_candidates(body, source, child_scope, candidates)
+        elif child.type == "field_declaration":
+            for name_node in named_children(child, type_name="field_identifier"):
+                name = node_text(source, name_node)
+                candidates.setdefault((scope, name), []).append(
+                    _symbol_key("", _join_scope((*scope, name)))
+                )
 
 
 def _extract_call_like_occurrences(
@@ -712,6 +790,157 @@ def _replace_symbol_key_file(symbol_key: str, file_path: str) -> str:
     return _symbol_key(file_path, qualified_name)
 
 
+def _extract_type_references(
+    *,
+    file_path: str,
+    source: bytes,
+    owner_key: str,
+    nodes: Iterator[Node],
+    edges: list[EdgeFact],
+    occurrences: list[OccurrenceFact],
+    reference_kind: str,
+) -> None:
+    seen: set[tuple[int, int]] = set()
+    for type_node in nodes:
+        key = (type_node.start_byte, type_node.end_byte)
+        if key in seen:
+            continue
+        seen.add(key)
+        text = node_text(source, type_node)
+        if text in _CPP_BUILTIN_TYPES:
+            continue
+        span = node_span(file_path, source, type_node)
+        occurrences.append(
+            OccurrenceFact(
+                file_path=file_path,
+                role="type_reference",
+                text=text,
+                span=span,
+                node_key=owner_key,
+                resolved_key=None,
+                confidence=0.5,
+                extractor=EXTRACTOR,
+                metadata={"reference_kind": reference_kind},
+            )
+        )
+        edges.append(
+            EdgeFact(
+                kind="uses_type",
+                src_key=owner_key,
+                dst_key=None,
+                unresolved_src=None,
+                unresolved_dst=text,
+                file_path=file_path,
+                span=span,
+                confidence=0.5,
+                extractor=EXTRACTOR,
+                metadata={"reference_kind": reference_kind},
+            )
+        )
+
+
+def _extract_field_references(
+    *,
+    file_path: str,
+    source: bytes,
+    node: Node,
+    scope: tuple[str, ...],
+    owner_key: str,
+    field_index: dict[tuple[tuple[str, ...], str], str],
+    shadowed_names: set[str],
+    edges: list[EdgeFact],
+    occurrences: list[OccurrenceFact],
+) -> None:
+    for field_expression in _descendants_of_type(node, "field_expression"):
+        object_node = first_child_by_field_name(field_expression, "argument")
+        if object_node is None:
+            object_node = field_expression.named_children[0]
+        if object_node.type != "identifier":
+            continue
+        name = node_text(source, object_node)
+        resolved_key = (
+            None
+            if name in shadowed_names
+            else _resolve_field_key(file_path, field_index, scope, name)
+        )
+        span = node_span(file_path, source, object_node)
+        occurrences.append(
+            OccurrenceFact(
+                file_path=file_path,
+                role="field_reference",
+                text=name,
+                span=span,
+                node_key=owner_key,
+                resolved_key=resolved_key,
+                confidence=0.6 if resolved_key is not None else 0.4,
+                extractor=EXTRACTOR,
+                metadata={"reference_kind": "field_expression"},
+            )
+        )
+        edges.append(
+            EdgeFact(
+                kind="references",
+                src_key=owner_key,
+                dst_key=resolved_key,
+                unresolved_src=None,
+                unresolved_dst=None if resolved_key is not None else name,
+                file_path=file_path,
+                span=node_span(file_path, source, field_expression),
+                confidence=0.6 if resolved_key is not None else 0.4,
+                extractor=EXTRACTOR,
+                metadata={"reference_kind": "field_expression"},
+            )
+        )
+
+
+def _resolve_field_key(
+    file_path: str,
+    field_index: dict[tuple[tuple[str, ...], str], str],
+    scope: tuple[str, ...],
+    name: str,
+) -> str | None:
+    for candidate_scope in _scope_resolution_order(scope):
+        key = field_index.get((candidate_scope, name))
+        if key is not None:
+            return _replace_symbol_key_file(key, file_path)
+    return None
+
+
+def _field_type_reference_nodes(node: Node) -> Iterator[Node]:
+    for child in node.named_children:
+        if child.type in _CPP_TYPE_NODE_TYPES:
+            yield child
+            return
+
+
+def _callable_type_reference_nodes(node: Node, declarator: Node) -> Iterator[Node]:
+    for child in node.named_children:
+        if child.type in _CPP_TYPE_NODE_TYPES:
+            yield child
+    parameters = next(
+        (
+            child
+            for child in declarator.named_children
+            if child.type == "parameter_list"
+        ),
+        None,
+    )
+    if parameters is not None:
+        for parameter in parameters.named_children:
+            if parameter.type == "parameter_declaration":
+                for child in parameter.named_children:
+                    if child.type in _CPP_TYPE_NODE_TYPES:
+                        yield child
+                        break
+
+
+def _descendants_of_type(node: Node, type_name: str) -> Iterator[Node]:
+    for child in node.named_children:
+        if child.type == type_name:
+            yield child
+        yield from _descendants_of_type(child, type_name)
+
+
 def _extract_fields(
     file_path: str,
     source: bytes,
@@ -755,6 +984,15 @@ def _extract_fields(
         )
         edges.append(
             _contains_edge(file_path, source, scope, qualified_name, name_node)
+        )
+        _extract_type_references(
+            file_path=file_path,
+            source=source,
+            owner_key=key,
+            nodes=_field_type_reference_nodes(node),
+            edges=edges,
+            occurrences=occurrences,
+            reference_kind="field_type",
         )
 
 
@@ -910,3 +1148,22 @@ def _join_scope(parts: tuple[str, ...]) -> str:
 
 def _symbol_key(file_path: str, local_name: str) -> str:
     return f"cpp:{file_path}#{local_name}"
+
+
+_CPP_TYPE_NODE_TYPES = {
+    "primitive_type",
+    "qualified_identifier",
+    "sized_type_specifier",
+    "type_identifier",
+}
+
+_CPP_BUILTIN_TYPES = {
+    "bool",
+    "char",
+    "double",
+    "float",
+    "int",
+    "long",
+    "short",
+    "void",
+}
