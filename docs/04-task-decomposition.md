@@ -563,7 +563,7 @@ Acceptance:
 
 ### T040 — Implement symbol search query
 
-Status: todo
+Status: done
 
 Depends on: T035
 

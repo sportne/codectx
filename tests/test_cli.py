@@ -42,10 +42,10 @@ def test_parser_version_exits_with_package_version(
 def test_main_reports_defined_but_unimplemented_command(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert main(["symbols", "PaymentService"]) == 0
+    assert main(["search", "PaymentService"]) == 0
 
     output = capsys.readouterr().out
-    assert "codectx command 'symbols' is defined but not implemented yet." in output
+    assert "codectx command 'search' is defined but not implemented yet." in output
     assert "docs/04-task-decomposition.md" in output
 
 
@@ -155,6 +155,69 @@ def test_health_reports_snapshot_without_stats(
     output = capsys.readouterr().out
     assert "No index health stats found" in output
     assert "--rebuild" in output
+
+
+def test_symbols_command_displays_symbol_matches(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    _write(
+        repo / "src" / "PaymentService.java",
+        "package acme;\nclass PaymentService { void authorize() {} }\n",
+    )
+    db_path = tmp_path / "graph.sqlite"
+    assert main(["index", str(repo), "--db", str(db_path)]) == 0
+    capsys.readouterr()
+
+    assert (
+        main(["symbols", "PaymentService", "--repo", str(repo), "--db", str(db_path)])
+        == 0
+    )
+
+    output = capsys.readouterr().out
+    assert "Symbols for PaymentService:" in output
+    assert "type java acme.PaymentService src/PaymentService.java:2" in output
+    assert "score=100" in output
+
+
+def test_symbols_command_reports_no_matches(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    _write(repo / "src" / "Foo.java", "class Foo {}\n")
+    db_path = tmp_path / "graph.sqlite"
+    assert main(["index", str(repo), "--db", str(db_path)]) == 0
+    capsys.readouterr()
+
+    assert main(["symbols", "Missing", "--repo", str(repo), "--db", str(db_path)]) == 0
+
+    output = capsys.readouterr().out
+    assert "No symbols found for Missing." in output
+
+
+def test_symbols_command_reports_missing_index(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    assert (
+        main(
+            [
+                "symbols",
+                "Foo",
+                "--repo",
+                str(repo),
+                "--db",
+                str(tmp_path / "missing.sqlite"),
+            ]
+        )
+        == 1
+    )
+
+    output = capsys.readouterr().out
+    assert "No codectx index found" in output
+    assert "codectx index" in output
 
 
 def _write(path: Path, text: str) -> None:

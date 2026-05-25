@@ -13,7 +13,13 @@ from codectx.indexing import (
     read_health,
     run_index,
 )
-from codectx.querying import PlaceholderResult, placeholder_result
+from codectx.querying import (
+    PlaceholderResult,
+    SymbolSearchResult,
+    placeholder_result,
+    search_symbols,
+)
+from codectx.querying import QueryingError as QueryServiceError
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -94,13 +100,14 @@ def main(argv: list[str] | None = None) -> int:
         return _run_index(args)
     if args.command == "health":
         return _run_health(args)
+    if args.command == "symbols":
+        return _run_symbols(args)
     if args.command in {
         "context",
         "inspect-edge",
         "inspect-node",
         "neighborhood",
         "search",
-        "symbols",
     }:
         return _run_query_placeholder(args)
 
@@ -133,6 +140,16 @@ def _run_query_placeholder(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_symbols(args: argparse.Namespace) -> int:
+    result = search_symbols(args.repo, args.query, db_path=args.db)
+    if isinstance(result, QueryServiceError):
+        print(result.message)
+        return 1
+
+    _print_symbol_search_result(result)
+    return 0
+
+
 def _print_index_result(result: IndexResult) -> None:
     print(f"Indexed {result.repo}")
     print(f"database: {result.db_path}")
@@ -156,6 +173,36 @@ def _print_stats(stats: dict[str, str]) -> None:
 
 def _print_placeholder_result(result: PlaceholderResult) -> None:
     print(result.message)
+
+
+def _print_symbol_search_result(result: SymbolSearchResult) -> None:
+    if not result.symbols:
+        print(f"No symbols found for {result.query}.")
+        return
+
+    print(f"Symbols for {result.query}:")
+    for symbol in result.symbols:
+        location = _format_location(
+            symbol.file_path, symbol.start_line, symbol.end_line
+        )
+        label = symbol.qualified_name or symbol.name or symbol.symbol_key or "<unnamed>"
+        language = f" {symbol.language}" if symbol.language else ""
+        print(
+            f"- id={symbol.node_id} score={symbol.score} "
+            f"{symbol.kind}{language} {label} {location}"
+        )
+
+
+def _format_location(
+    file_path: str | None, start_line: int | None, end_line: int | None
+) -> str:
+    if file_path is None:
+        return "<unknown>"
+    if start_line is None:
+        return file_path
+    if end_line is None or end_line == start_line:
+        return f"{file_path}:{start_line}"
+    return f"{file_path}:{start_line}-{end_line}"
 
 
 if __name__ == "__main__":
