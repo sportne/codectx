@@ -37,7 +37,6 @@ def test_build_explain_bundle_includes_target_enclosing_import_and_sibling(
         "target.definition",
         "enclosing.type",
         "import",
-        "sibling.definition",
     ]
     assert bundle.items[0].rank == 1
     assert bundle.items[0].score_trace["target"] == 5.0
@@ -50,7 +49,7 @@ def test_build_explain_bundle_includes_target_enclosing_import_and_sibling(
     assert "authorize" in bundle.items[0].text
     assert bundle.items[1].reason == "enclosing type"
     assert bundle.items[2].text == "import java.util.List;\n"
-    assert bundle.items[3].reason == "same-file sibling"
+    assert bundle.omitted[0].reason == "overlap"
     assert bundle.index_health == {"files": "1", "nodes": "3"}
     assert bundle.anchor["qualified_name"] == "acme.PaymentService.authorize()"
 
@@ -80,10 +79,66 @@ def test_build_explain_bundle_records_omitted_optional_candidates_by_budget(
         "target.definition",
         "enclosing.type",
     ]
-    assert [omitted.reason for omitted in bundle.omitted] == ["budget", "budget"]
+    assert [omitted.reason for omitted in bundle.omitted] == ["budget", "overlap"]
     assert any(
         omitted.name == "src/PaymentService.java:7" for omitted in bundle.omitted
     )
+
+
+def test_build_explain_bundle_selects_optional_candidates_by_score_per_token(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_budget_ranking_graph(store, repo)
+        anchor = resolve_file_line_anchor(store.conn, snapshot_id, "src/Foo.java", 2)
+        assert isinstance(anchor, AnchorResult)
+
+        bundle = build_explain_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=27,
+            index_health={},
+        )
+
+    assert [item.kind for item in bundle.items] == [
+        "target.definition",
+        "enclosing.file",
+        "neighborhood.callee",
+    ]
+    assert bundle.items[2].metadata["node_name"] == "cheap"
+    assert [omitted.reason for omitted in bundle.omitted] == ["budget", "budget"]
+    assert any(omitted.name == "src/Foo.java:5" for omitted in bundle.omitted)
+
+
+def test_build_explain_bundle_omits_overlapping_optional_candidates(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_overlap_graph(store, repo)
+        anchor = resolve_file_line_anchor(store.conn, snapshot_id, "src/Foo.java", 2)
+        assert isinstance(anchor, AnchorResult)
+
+        bundle = build_explain_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=100,
+            index_health={},
+        )
+
+    assert [item.kind for item in bundle.items] == [
+        "target.definition",
+        "enclosing.file",
+    ]
+    assert [omitted.reason for omitted in bundle.omitted] == ["overlap", "overlap"]
+    assert bundle.omitted[0].name == "src/Foo.java:4"
 
 
 def test_build_explain_bundle_uses_anchor_chunk_without_node(tmp_path: Path) -> None:
@@ -352,21 +407,16 @@ def test_build_explain_bundle_adds_neighborhood_and_test_candidates(
     assert [item.kind for item in bundle.items] == [
         "target.definition",
         "enclosing.type",
-        "neighborhood.callee",
         "neighborhood.type",
-        "neighborhood.reference",
         "test.related",
     ]
-    assert [item.reason for item in bundle.items[2:6]] == [
-        "direct callee",
+    assert [item.reason for item in bundle.items[2:4]] == [
         "referenced type",
-        "referenced field",
         "related test",
     ]
-    assert bundle.items[2].metadata["edge_kind"] == "calls"
-    assert bundle.items[3].metadata["node_name"] == "Gateway"
-    assert bundle.items[4].metadata["node_name"] == "gateway"
-    assert bundle.items[5].file == "test/PaymentServiceAuthorizeTest.java"
+    assert bundle.items[2].metadata["node_name"] == "Gateway"
+    assert bundle.items[3].file == "test/PaymentServiceAuthorizeTest.java"
+    assert [omitted.reason for omitted in bundle.omitted] == ["overlap", "overlap"]
     assert any("gateway.charge" in note for note in bundle.uncertainty_notes)
     assert {
         "stage": "candidates",
@@ -403,11 +453,11 @@ def test_build_explain_bundle_omits_neighborhood_items_when_over_budget(
     ]
     assert [omitted.reason for omitted in bundle.omitted] == [
         "budget",
-        "budget",
-        "budget",
+        "overlap",
+        "overlap",
         "budget",
     ]
-    assert bundle.omitted[0].name == "src/PaymentService.java:8"
+    assert bundle.omitted[0].name == "src/Gateway.java:1"
     assert bundle.omitted[-1].name == "test/PaymentServiceAuthorizeTest.java:2-4"
 
 
@@ -725,6 +775,238 @@ def _seed_neighborhood_context_graph(store: GraphStore, repo: Path) -> int:
                     "  }\n"
                 ),
                 token_estimate=15,
+            ),
+        ],
+        file_ids,
+        node_ids,
+    )
+    return snapshot_id
+
+
+def _seed_budget_ranking_graph(store: GraphStore, repo: Path) -> int:
+    source = (
+        "class Foo {\n"
+        "  void run() { expensive(); cheap(); }\n"
+        "  void expensive() {}\n"
+        "  void cheap() {}\n"
+        "  void lowValue() {}\n"
+        "}\n"
+    )
+    _write(repo / "src" / "Foo.java", source)
+    store.apply_schema()
+    repo_id = store.create_repo(repo)
+    snapshot_id = store.create_snapshot(repo_id)
+    file_ids = store.insert_files(
+        snapshot_id,
+        [
+            FileRecord(
+                path="src/Foo.java",
+                language="java",
+                content_hash="budget",
+                size_bytes=len(source.encode("utf-8")),
+                line_count=6,
+            )
+        ],
+    )
+    node_ids = store.insert_nodes(
+        snapshot_id,
+        [
+            _java_node(
+                "callable",
+                "run",
+                "Foo.run()",
+                "java:src/Foo.java#run",
+                "src/Foo.java",
+                2,
+                2,
+            ),
+            _java_node(
+                "callable",
+                "expensive",
+                "Foo.expensive()",
+                "java:src/Foo.java#expensive",
+                "src/Foo.java",
+                3,
+                3,
+            ),
+            _java_node(
+                "callable",
+                "cheap",
+                "Foo.cheap()",
+                "java:src/Foo.java#cheap",
+                "src/Foo.java",
+                4,
+                4,
+            ),
+            _java_node(
+                "callable",
+                "lowValue",
+                "Foo.lowValue()",
+                "java:src/Foo.java#lowValue",
+                "src/Foo.java",
+                5,
+                5,
+            ),
+        ],
+        file_ids,
+    )
+    store.insert_edges(
+        snapshot_id,
+        [
+            _edge(
+                "calls",
+                "java:src/Foo.java#run",
+                "java:src/Foo.java#expensive",
+                "src/Foo.java",
+                2,
+            ),
+            _edge(
+                "calls",
+                "java:src/Foo.java#run",
+                "java:src/Foo.java#cheap",
+                "src/Foo.java",
+                2,
+            ),
+        ],
+        file_ids,
+        node_ids,
+    )
+    store.insert_chunks(
+        [
+            ChunkFact(
+                file_path="src/Foo.java",
+                node_key="java:src/Foo.java#run",
+                kind="definition",
+                start_line=2,
+                end_line=2,
+                text="  void run() { expensive(); cheap(); }\n",
+                token_estimate=10,
+            ),
+            ChunkFact(
+                file_path="src/Foo.java",
+                node_key="java:src/Foo.java#expensive",
+                kind="definition",
+                start_line=3,
+                end_line=3,
+                text="  void expensive() {}\n",
+                token_estimate=40,
+            ),
+            ChunkFact(
+                file_path="src/Foo.java",
+                node_key="java:src/Foo.java#cheap",
+                kind="definition",
+                start_line=4,
+                end_line=4,
+                text="  void cheap() {}\n",
+                token_estimate=5,
+            ),
+            ChunkFact(
+                file_path="src/Foo.java",
+                node_key="java:src/Foo.java#lowValue",
+                kind="definition",
+                start_line=5,
+                end_line=5,
+                text="  void lowValue() {}\n",
+                token_estimate=5,
+            ),
+        ],
+        file_ids,
+        node_ids,
+    )
+    return snapshot_id
+
+
+def _seed_overlap_graph(store: GraphStore, repo: Path) -> int:
+    source = "class Foo {\n  void run() { helper(); }\n  void helper() {}\n}\n"
+    _write(repo / "src" / "Foo.java", source)
+    store.apply_schema()
+    repo_id = store.create_repo(repo)
+    snapshot_id = store.create_snapshot(repo_id)
+    file_ids = store.insert_files(
+        snapshot_id,
+        [
+            FileRecord(
+                path="src/Foo.java",
+                language="java",
+                content_hash="overlap",
+                size_bytes=len(source.encode("utf-8")),
+                line_count=4,
+            )
+        ],
+    )
+    node_ids = store.insert_nodes(
+        snapshot_id,
+        [
+            _java_node(
+                "callable",
+                "run",
+                "Foo.run()",
+                "java:src/Foo.java#run",
+                "src/Foo.java",
+                2,
+                2,
+            ),
+            _java_node(
+                "callable",
+                "helper",
+                "Foo.helper()",
+                "java:src/Foo.java#helper",
+                "src/Foo.java",
+                3,
+                3,
+            ),
+        ],
+        file_ids,
+    )
+    store.insert_edges(
+        snapshot_id,
+        [
+            _edge(
+                "calls",
+                "java:src/Foo.java#run",
+                "java:src/Foo.java#helper",
+                "src/Foo.java",
+                2,
+            ),
+            _edge(
+                "references",
+                "java:src/Foo.java#run",
+                "java:src/Foo.java#helper",
+                "src/Foo.java",
+                2,
+            ),
+        ],
+        file_ids,
+        node_ids,
+    )
+    store.insert_chunks(
+        [
+            ChunkFact(
+                file_path="src/Foo.java",
+                node_key="java:src/Foo.java#run",
+                kind="definition",
+                start_line=2,
+                end_line=2,
+                text="  void run() { helper(); }\n",
+                token_estimate=8,
+            ),
+            ChunkFact(
+                file_path="src/Foo.java",
+                node_key="java:src/Foo.java#helper",
+                kind="definition",
+                start_line=4,
+                end_line=4,
+                text="  void helper() {}\n",
+                token_estimate=5,
+            ),
+            ChunkFact(
+                file_path="src/Foo.java",
+                node_key=None,
+                kind="definition",
+                start_line=4,
+                end_line=4,
+                text="  void helper() {}\n",
+                token_estimate=5,
             ),
         ],
         file_ids,

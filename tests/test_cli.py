@@ -264,7 +264,7 @@ def test_context_command_generates_markdown_for_file_line_anchor(
     output = capsys.readouterr().out
     assert "# codectx context bundle" in output
     assert "target.definition" in output
-    assert "neighborhood.callee" in output
+    assert "overlap" in output
     assert "src/Foo.java:2" in output
 
 

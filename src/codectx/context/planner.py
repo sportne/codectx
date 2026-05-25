@@ -616,11 +616,28 @@ def _select_candidates(
 ) -> tuple[list[_Candidate], list[OmittedItem]]:
     selected = list(required)
     used_tokens = sum(candidate.token_estimate for candidate in selected)
+    selected_ranges = [
+        range_key
+        for candidate in selected
+        if (range_key := _candidate_range_key(candidate)) is not None
+    ]
     omitted: list[OmittedItem] = []
-    for candidate in optional:
+    for candidate in sorted(optional, key=_budget_sort_key):
+        range_key = _candidate_range_key(candidate)
+        if range_key is not None and _overlaps_any(range_key, selected_ranges):
+            omitted.append(
+                OmittedItem(
+                    name=_candidate_name(candidate),
+                    reason="overlap",
+                    score=candidate.score,
+                )
+            )
+            continue
         if used_tokens + candidate.token_estimate <= budget:
             selected.append(candidate)
             used_tokens += candidate.token_estimate
+            if range_key is not None:
+                selected_ranges.append(range_key)
         else:
             omitted.append(
                 OmittedItem(
@@ -630,6 +647,32 @@ def _select_candidates(
                 )
             )
     return selected, omitted
+
+
+def _budget_sort_key(candidate: _Candidate) -> tuple[float, float, str, int, int]:
+    ratio = candidate.score / max(candidate.token_estimate, 1)
+    start_line, end_line = candidate.line_range or (0, 0)
+    return (-ratio, -candidate.score, candidate.file or "", start_line, end_line)
+
+
+def _candidate_range_key(candidate: _Candidate) -> tuple[str, int, int] | None:
+    if candidate.file is None or candidate.line_range is None:
+        return None
+    start_line, end_line = candidate.line_range
+    return candidate.file, start_line, end_line
+
+
+def _overlaps_any(
+    candidate: tuple[str, int, int],
+    selected: list[tuple[str, int, int]],
+) -> bool:
+    candidate_file, candidate_start, candidate_end = candidate
+    for selected_file, selected_start, selected_end in selected:
+        if candidate_file != selected_file:
+            continue
+        if candidate_start <= selected_end and selected_start <= candidate_end:
+            return True
+    return False
 
 
 def _score_candidates(

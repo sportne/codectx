@@ -1002,7 +1002,7 @@ Acceptance:
 
 ### T071 — Implement token budget pruning
 
-Status: todo
+Status: done
 
 Depends on: T070
 
