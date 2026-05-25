@@ -19,10 +19,16 @@ def test_format_markdown_renders_bundle_with_balanced_code_fences() -> None:
     assert "### 1. target.definition" in rendered
     assert "- file: src/Foo.java:2-4" in rendered
     assert "- reason: target definition" in rendered
-    assert "- confidence: 0.95" in rendered
+    assert "- confidence: 0.95 (resolved/high)" in rendered
+    assert "- score_trace: confidence=0.475, total=5" in rendered
     assert "```java\nclass Foo {}\n```" in rendered
     assert "- src/Foo.java:9: budget score=0.5" in rendered
     assert "- parse diagnostics omitted" in rendered
+    assert (
+        "- unresolved relationship: Unresolved calls relationship from target: foo."
+        in rendered
+    )
+    assert "- parser diagnostics recorded: 2" in rendered
     assert "- stage=rank" in rendered
     assert rendered.count("```") == 2
 
@@ -44,6 +50,7 @@ def test_format_markdown_renders_empty_sections_and_unknown_location() -> None:
                 reason="fallback",
                 confidence=0.5,
                 extractor=None,
+                score_trace={"confidence": 0.25, "total": 1.0},
             )
         ],
         omitted=[OmittedItem(name=None, reason="duplicate", score=None)],
@@ -54,6 +61,7 @@ def test_format_markdown_renders_empty_sections_and_unknown_location() -> None:
 
     assert "- none" in rendered
     assert "- file: <unknown>" in rendered
+    assert "- confidence: 0.5 (weak heuristic)" in rendered
     assert "```\nplain text\n```" in rendered
     assert "- <unnamed>: duplicate" in rendered
     assert "## Uncertainty\nNone." in rendered
@@ -135,16 +143,20 @@ def test_format_json_serializes_bundle_with_required_fields() -> None:
 
     assert parsed["query"]["goal"] == "explain"
     assert parsed["anchor"]["file"] == "src/Foo.java"
+    assert parsed["index_health"]["diagnostics"] == "2"
     assert parsed["index_health"]["files"] == "1"
     assert parsed["items"][0]["line_range"] == [2, 4]
     assert parsed["items"][0]["text"] == "class Foo {}\n"
     assert parsed["items"][0]["score"] == 5.0
-    assert parsed["items"][0]["score_trace"] == {}
+    assert parsed["items"][0]["score_trace"] == {"confidence": 0.475, "total": 5.0}
     assert parsed["items"][0]["reason"] == "target definition"
     assert parsed["items"][0]["confidence"] == 0.95
     assert parsed["items"][0]["metadata"] == {"symbol": "Foo"}
     assert parsed["omitted"][0]["reason"] == "budget"
-    assert parsed["uncertainty_notes"] == ["parse diagnostics omitted"]
+    assert parsed["uncertainty_notes"] == [
+        "parse diagnostics omitted",
+        "Unresolved calls relationship from target: foo.",
+    ]
     assert parsed["trace"] == [{"stage": "rank"}]
     assert rendered.endswith("\n")
 
@@ -155,17 +167,23 @@ def test_format_text_renders_plain_text_bundle() -> None:
     assert rendered.startswith("codectx context bundle\n")
     assert "Query\n- budget: 100\n- goal: explain" in rendered
     assert "Anchor\n- file: src/Foo.java" in rendered
-    assert "Index Health\n- files: 1\n- nodes: 1" in rendered
+    assert "Index Health\n- diagnostics: 2\n- files: 1\n- nodes: 1" in rendered
     assert "1. target.definition" in rendered
     assert "file: src/Foo.java:2-4" in rendered
     assert "reason: target definition" in rendered
     assert "score: 5" in rendered
-    assert "confidence: 0.95" in rendered
+    assert "confidence: 0.95 (resolved/high)" in rendered
     assert "tokens: 4" in rendered
     assert "extractor: test" in rendered
+    assert "score_trace: confidence=0.475, total=5" in rendered
     assert "snippet:\nclass Foo {}\n" in rendered
     assert "- src/Foo.java:9: budget score=0.5" in rendered
     assert "- parse diagnostics omitted" in rendered
+    assert (
+        "- unresolved relationship: Unresolved calls relationship from target: foo."
+        in rendered
+    )
+    assert "- parser diagnostics recorded: 2" in rendered
     assert "```" not in rendered
 
 
@@ -185,7 +203,7 @@ def _bundle() -> ContextBundle:
     return ContextBundle(
         query={"goal": "explain", "budget": 100},
         anchor={"file": "src/Foo.java", "line": 3, "node_id": 1},
-        index_health={"files": "1", "nodes": "1"},
+        index_health={"diagnostics": "2", "files": "1", "nodes": "1"},
         items=[
             ContextItem(
                 rank=1,
@@ -199,9 +217,13 @@ def _bundle() -> ContextBundle:
                 confidence=0.95,
                 extractor="test",
                 metadata={"symbol": "Foo"},
+                score_trace={"confidence": 0.475, "total": 5.0},
             )
         ],
         omitted=[OmittedItem(name="src/Foo.java:9", reason="budget", score=0.5)],
-        uncertainty_notes=["parse diagnostics omitted"],
+        uncertainty_notes=[
+            "parse diagnostics omitted",
+            "Unresolved calls relationship from target: foo.",
+        ],
         trace=[{"stage": "rank"}],
     )

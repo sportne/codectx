@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from json import dumps
 
 from codectx.context.bundle import ContextBundle
@@ -31,12 +32,13 @@ def format_markdown(bundle: ContextBundle) -> str:
                 f"- file: {location}",
                 f"- reason: {item.reason}",
                 f"- score: {item.score:g}",
-                f"- confidence: {item.confidence:g}",
+                f"- confidence: {item.confidence:g} ({_confidence_label(item.confidence)})",
                 f"- tokens: {item.token_estimate}",
             ]
         )
         if item.extractor is not None:
             lines.append(f"- extractor: {item.extractor}")
+        lines.append(f"- score_trace: {_format_mapping_inline(item.score_trace)}")
         language = _language_for_file(item.file)
         fence = _fence_for_text(item.text)
         lines.extend(["", f"{fence}{language}", item.text.rstrip("\n"), fence, ""])
@@ -53,7 +55,14 @@ def format_markdown(bundle: ContextBundle) -> str:
     if not bundle.uncertainty_notes:
         lines.append("None.")
     for note in bundle.uncertainty_notes:
-        lines.append(f"- {note}")
+        lines.append(f"- {_format_uncertainty_note(note)}")
+
+    warning_lines = _warning_lines(bundle.index_health)
+    lines.extend(["", "## Warnings"])
+    if not warning_lines:
+        lines.append("None.")
+    else:
+        lines.extend(warning_lines)
 
     lines.extend(["", "## Trace"])
     if not bundle.trace:
@@ -87,12 +96,13 @@ def format_text(bundle: ContextBundle) -> str:
                 f"file: {_location(item.file, item.line_range)}",
                 f"reason: {item.reason}",
                 f"score: {item.score:g}",
-                f"confidence: {item.confidence:g}",
+                f"confidence: {item.confidence:g} ({_confidence_label(item.confidence)})",
                 f"tokens: {item.token_estimate}",
             ]
         )
         if item.extractor is not None:
             lines.append(f"extractor: {item.extractor}")
+        lines.append(f"score_trace: {_format_mapping_inline(item.score_trace)}")
         lines.extend(["snippet:", item.text.rstrip("\n"), ""])
 
     lines.extend(["Omitted"])
@@ -107,7 +117,14 @@ def format_text(bundle: ContextBundle) -> str:
     if not bundle.uncertainty_notes:
         lines.append("None.")
     for note in bundle.uncertainty_notes:
-        lines.append(f"- {note}")
+        lines.append(f"- {_format_uncertainty_note(note)}")
+
+    warning_lines = _warning_lines(bundle.index_health)
+    lines.extend(["", "Warnings"])
+    if not warning_lines:
+        lines.append("None.")
+    else:
+        lines.extend(warning_lines)
 
     lines.extend(["", "Trace"])
     if not bundle.trace:
@@ -124,7 +141,7 @@ def _mapping_lines(values: dict[str, object]) -> list[str]:
     return [f"- {key}: {_format_value(value)}" for key, value in sorted(values.items())]
 
 
-def _format_mapping_inline(values: dict[str, object]) -> str:
+def _format_mapping_inline(values: Mapping[str, object]) -> str:
     if not values:
         return "none"
     return ", ".join(
@@ -136,6 +153,36 @@ def _format_value(value: object) -> str:
     if value is None:
         return "<none>"
     return str(value)
+
+
+def _confidence_label(confidence: float) -> str:
+    if confidence >= 0.9:
+        return "resolved/high"
+    if confidence >= 0.6:
+        return "strong heuristic"
+    if confidence >= 0.3:
+        return "weak heuristic"
+    return "low confidence"
+
+
+def _format_uncertainty_note(note: str) -> str:
+    if note.startswith("Unresolved "):
+        return f"unresolved relationship: {note}"
+    return note
+
+
+def _warning_lines(index_health: dict[str, object]) -> list[str]:
+    diagnostics = _int_value(index_health.get("diagnostics"))
+    if diagnostics <= 0:
+        return []
+    return [f"- parser diagnostics recorded: {diagnostics}"]
+
+
+def _int_value(value: object) -> int:
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _location(file_path: str | None, line_range: tuple[int, int] | None) -> str:
