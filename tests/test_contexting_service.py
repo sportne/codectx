@@ -215,16 +215,25 @@ def test_build_context_reports_missing_file_and_absolute_file_outside_repo(
     assert "File is not indexed" in outside_file.message
 
 
-def test_build_context_reports_unimplemented_goal_after_validation(
+def test_build_context_routes_non_explain_goals_through_shared_planner(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"
-    repo.mkdir()
+    db_path = tmp_path / "graph.sqlite"
+    with GraphStore(db_path) as store:
+        _seed_context_graph(store, repo)
 
-    result = build_context(repo, symbol="Foo", goal="dependencies")
+    result = build_context(
+        repo,
+        db_path=db_path,
+        symbol="Foo",
+        goal="dependencies",
+        output_format="json",
+    )
 
-    assert isinstance(result, ContextingError)
-    assert "not implemented yet" in result.message
+    assert isinstance(result, ContextResult)
+    assert '"goal": "dependencies"' in result.rendered_text
+    assert "target.definition" in result.rendered_text
 
 
 def _seed_context_graph(

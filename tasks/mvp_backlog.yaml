@@ -117,6 +117,8 @@ milestones:
   - id: M8
     name: Additional context goals
     tasks:
+      - id: T079
+        status: done
       - id: T080
         status: todo
       - id: T081

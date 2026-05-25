@@ -8,7 +8,7 @@ from typing import Any
 
 from codectx.context.anchors import AnchorResult, resolve_file_line_anchor
 from codectx.context.formatters import format_json, format_markdown, format_text
-from codectx.context.planner import build_explain_bundle
+from codectx.context.planner import build_context_bundle
 from codectx.graph.query import SymbolResult
 from codectx.graph.query import search_symbols as graph_search_symbols
 from codectx.graph.store import GraphStore
@@ -64,12 +64,6 @@ def build_context(
         return error
 
     resolved_output_path = _resolve_output_path(output_path)
-    if goal != "explain":
-        return ContextingError(
-            f"Context goal '{goal}' is not implemented yet. "
-            "Only `explain` is available in this milestone."
-        )
-
     repo_path = Path(repo).resolve()
     resolved_db_path = default_db_path(repo_path, db_path)
     if not resolved_db_path.exists():
@@ -109,7 +103,7 @@ def build_context(
                 f"Symbol query matched {len(symbol_matches)} symbols; "
                 "selected the top-ranked match."
             )
-        bundle = build_explain_bundle(
+        bundle = build_context_bundle(
             store.conn,
             snapshot_id,
             repo_path,

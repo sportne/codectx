@@ -30,7 +30,7 @@ class _Candidate:
     score_trace: dict[str, float] = field(default_factory=dict)
 
 
-def build_explain_bundle(
+def build_context_bundle(
     conn: Any,
     snapshot_id: int,
     repo: str | Path,
@@ -41,7 +41,7 @@ def build_explain_bundle(
     query: dict[str, Any] | None = None,
     uncertainty_notes: list[str] | None = None,
 ) -> ContextBundle:
-    """Build a deterministic v0 explain bundle for an anchor."""
+    """Build a deterministic context bundle for a supported goal."""
     repo_path = Path(repo)
     notes = list(uncertainty_notes or [])
     trace: list[dict[str, Any]] = [
@@ -120,6 +120,31 @@ def build_explain_bundle(
         omitted=omitted,
         uncertainty_notes=notes,
         trace=trace,
+    )
+
+
+def build_explain_bundle(
+    conn: Any,
+    snapshot_id: int,
+    repo: str | Path,
+    anchor: AnchorResult,
+    *,
+    budget: int,
+    index_health: dict[str, str],
+    query: dict[str, Any] | None = None,
+    uncertainty_notes: list[str] | None = None,
+) -> ContextBundle:
+    """Build an explain bundle through the shared goal planner."""
+    resolved_query = query or {"goal": "explain", "budget": budget}
+    return build_context_bundle(
+        conn,
+        snapshot_id,
+        repo,
+        anchor,
+        budget=budget,
+        index_health=index_health,
+        query={**resolved_query, "goal": "explain"},
+        uncertainty_notes=uncertainty_notes,
     )
 
 
