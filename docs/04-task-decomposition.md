@@ -1270,7 +1270,7 @@ Acceptance:
 
 ### T094 — Add performance smoke tests
 
-Status: todo
+Status: done
 
 Depends on: T092
 
