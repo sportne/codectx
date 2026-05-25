@@ -1027,7 +1027,7 @@ Acceptance:
 
 ### T072 — Add goal-specific edge weights
 
-Status: todo
+Status: done
 
 Depends on: T070
 

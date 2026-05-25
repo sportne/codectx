@@ -111,7 +111,7 @@ milestones:
       - id: T071
         status: done
       - id: T072
-        status: todo
+        status: done
       - id: T073
         status: todo
   - id: M8

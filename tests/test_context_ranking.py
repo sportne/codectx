@@ -78,3 +78,55 @@ def test_score_candidate_records_edge_test_confidence_and_token_components() -> 
         "redundancy": 0.0,
         "total": 5.38,
     }
+
+
+def test_score_candidate_applies_goal_specific_edge_weights() -> None:
+    anchor = RankingAnchor(file_path="src/Foo.java", line=1, node_name="Foo")
+    call = RankingCandidate(
+        kind="neighborhood.callee",
+        file_path="src/Foo.java",
+        line_range=(3, 3),
+        text="void helper() {}\n",
+        token_estimate=5,
+        confidence=1.0,
+        metadata={"edge_id": 1, "edge_kind": "calls", "node_name": "helper"},
+    )
+    dependency = RankingCandidate(
+        kind="neighborhood.type",
+        file_path="src/Bar.java",
+        line_range=(1, 1),
+        text="class Bar {}\n",
+        token_estimate=4,
+        confidence=1.0,
+        metadata={"edge_id": 2, "edge_kind": "uses_type", "node_name": "Bar"},
+    )
+
+    call_neighborhood_call = score_candidate(
+        call, anchor, goal="call-neighborhood"
+    ).score_trace["edge_relevance"]
+    call_neighborhood_dependency = score_candidate(
+        dependency, anchor, goal="call-neighborhood"
+    ).score_trace["edge_relevance"]
+    dependencies_call = score_candidate(call, anchor, goal="dependencies").score_trace[
+        "edge_relevance"
+    ]
+    dependencies_dependency = score_candidate(
+        dependency, anchor, goal="dependencies"
+    ).score_trace["edge_relevance"]
+    failure_references = score_candidate(
+        RankingCandidate(
+            kind="neighborhood.reference",
+            file_path="src/Foo.java",
+            line_range=(4, 4),
+            text="field",
+            token_estimate=2,
+            confidence=1.0,
+            metadata={"edge_id": 3, "edge_kind": "references"},
+        ),
+        anchor,
+        goal="failure-modes",
+    ).score_trace["edge_relevance"]
+
+    assert call_neighborhood_call > call_neighborhood_dependency
+    assert dependencies_dependency > dependencies_call
+    assert failure_references > dependencies_call

@@ -702,6 +702,7 @@ def _score_candidates(
             ),
             ranking_anchor,
             query_text=query_text,
+            goal=str(query.get("goal", "explain")),
         )
         scored.append(
             _Candidate(

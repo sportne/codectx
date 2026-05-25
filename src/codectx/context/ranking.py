@@ -5,6 +5,39 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+GOAL_POLICIES: dict[str, dict[str, float]] = {
+    "explain": {
+        "calls": 2.0,
+        "uses_type": 1.7,
+        "references": 1.5,
+        "import": 0.8,
+        "include": 0.8,
+    },
+    "failure-modes": {
+        "calls": 1.4,
+        "uses_type": 1.2,
+        "references": 1.8,
+        "import": 0.5,
+        "include": 0.5,
+    },
+    "dependencies": {
+        "calls": 1.0,
+        "uses_type": 2.2,
+        "references": 1.4,
+        "import": 1.6,
+        "include": 1.6,
+    },
+    "call-neighborhood": {
+        "calls": 2.5,
+        "uses_type": 0.8,
+        "references": 1.0,
+        "import": 0.3,
+        "include": 0.3,
+    },
+}
+
+DEFAULT_GOAL = "explain"
+
 
 @dataclass(frozen=True)
 class RankingAnchor:
@@ -43,12 +76,13 @@ def score_candidate(
     anchor: RankingAnchor,
     *,
     query_text: str | None = None,
+    goal: str = DEFAULT_GOAL,
 ) -> RankingResult:
     """Score one context candidate with a stable explainable formula."""
     components = {
         "target": 5.0 if candidate.kind.startswith("target.") else 0.0,
         "exact_match": 3.0 if _has_exact_match(candidate, anchor, query_text) else 0.0,
-        "edge_relevance": _edge_relevance(candidate),
+        "edge_relevance": _edge_relevance(candidate, goal),
         "graph_proximity": _graph_proximity(candidate),
         "source_proximity": _source_proximity(candidate, anchor),
         "lexical_match": 1.0
@@ -100,17 +134,12 @@ def _has_lexical_match(
     return any(needle in str(_normalize(value, default="")) for value in haystacks)
 
 
-def _edge_relevance(candidate: RankingCandidate) -> float:
+def _edge_relevance(candidate: RankingCandidate, goal: str) -> float:
+    policy = GOAL_POLICIES.get(goal, GOAL_POLICIES[DEFAULT_GOAL])
     edge_kind = candidate.metadata.get("edge_kind")
-    if edge_kind == "calls":
-        return 2.0
-    if edge_kind == "uses_type":
-        return 1.7
-    if edge_kind == "references":
-        return 1.5
-    if candidate.kind in {"import", "include"}:
-        return 0.8
-    return 0.0
+    if edge_kind is not None:
+        return policy.get(str(edge_kind), 0.0)
+    return policy.get(candidate.kind, 0.0)
 
 
 def _graph_proximity(candidate: RankingCandidate) -> float:
