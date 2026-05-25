@@ -1227,7 +1227,7 @@ Acceptance:
 
 ### T092 — Implement CLI acceptance tests
 
-Status: todo
+Status: done
 
 Depends on: T090, T091
 
