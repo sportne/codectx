@@ -789,7 +789,7 @@ Acceptance:
 
 ### T055 — Wire `codectx context --goal explain`
 
-Status: todo
+Status: done
 
 Depends on: T051, T052, T053, T054
 

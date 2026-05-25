@@ -139,6 +139,154 @@ def test_context_command_reports_invalid_anchor_shape(
     assert "--line can only be used with --file" in capsys.readouterr().out
 
 
+def test_context_command_generates_markdown_for_file_line_anchor(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    _write(repo / "src" / "Foo.java", "class Foo { void run() {} }\n")
+    db_path = tmp_path / "graph.sqlite"
+    assert main(["index", str(repo), "--db", str(db_path)]) == 0
+    capsys.readouterr()
+
+    assert (
+        main(
+            [
+                "context",
+                "--file",
+                "src/Foo.java",
+                "--line",
+                "1",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db_path),
+                "--format",
+                "markdown",
+            ]
+        )
+        == 0
+    )
+
+    output = capsys.readouterr().out
+    assert "# codectx context bundle" in output
+    assert "target.definition" in output
+    assert "src/Foo.java:1" in output
+
+
+def test_context_command_generates_json_text_and_output_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    _write(repo / "src" / "Foo.java", "class Foo { void run() {} }\n")
+    db_path = tmp_path / "graph.sqlite"
+    assert main(["index", str(repo), "--db", str(db_path)]) == 0
+    capsys.readouterr()
+
+    assert (
+        main(
+            [
+                "context",
+                "--symbol",
+                "Foo",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db_path),
+                "--format",
+                "json",
+            ]
+        )
+        == 0
+    )
+    assert '"goal": "explain"' in capsys.readouterr().out
+
+    output_path = tmp_path / "context.txt"
+    assert (
+        main(
+            [
+                "context",
+                "--symbol",
+                "Foo",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db_path),
+                "--format",
+                "text",
+                "--output",
+                str(output_path),
+            ]
+        )
+        == 0
+    )
+
+    assert output_path.read_text(encoding="utf-8").startswith(
+        "codectx context bundle\n"
+    )
+    assert f"Wrote context bundle to {output_path.resolve()}" in capsys.readouterr().out
+
+
+def test_context_command_reports_missing_index_no_symbol_and_unsupported_goal(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    assert (
+        main(
+            [
+                "context",
+                "--symbol",
+                "Foo",
+                "--repo",
+                str(repo),
+                "--db",
+                str(tmp_path / "missing.sqlite"),
+            ]
+        )
+        == 1
+    )
+    assert "No codectx index found" in capsys.readouterr().out
+
+    _write(repo / "src" / "Foo.java", "class Foo {}\n")
+    db_path = tmp_path / "graph.sqlite"
+    assert main(["index", str(repo), "--db", str(db_path)]) == 0
+    capsys.readouterr()
+
+    assert (
+        main(
+            [
+                "context",
+                "--symbol",
+                "Missing",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db_path),
+            ]
+        )
+        == 1
+    )
+    assert "No symbols found for Missing" in capsys.readouterr().out
+
+    assert (
+        main(
+            [
+                "context",
+                "--symbol",
+                "Foo",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db_path),
+                "--goal",
+                "dependencies",
+            ]
+        )
+        == 1
+    )
+    assert "not implemented yet" in capsys.readouterr().out
+
+
 def test_index_and_health_commands_persist_and_display_stats(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
