@@ -150,6 +150,8 @@ def _graph_proximity(candidate: RankingCandidate) -> float:
 
 
 def _goal_relevance(candidate: RankingCandidate, goal: str) -> float:
+    if goal == "call-neighborhood":
+        return _call_neighborhood_relevance(candidate)
     if goal == "dependencies":
         return _dependency_relevance(candidate)
     if goal != "failure-modes":
@@ -186,6 +188,16 @@ def _goal_relevance(candidate: RankingCandidate, goal: str) -> float:
         candidate.metadata.get("edge_kind") == "references"
         and candidate.confidence < 0.6
     ):
+        return 1.0
+    return 0.0
+
+
+def _call_neighborhood_relevance(candidate: RankingCandidate) -> float:
+    if candidate.kind == "neighborhood.caller":
+        return 2.0
+    if candidate.kind == "neighborhood.callee":
+        return 1.8
+    if candidate.metadata.get("edge_kind") == "calls":
         return 1.0
     return 0.0
 

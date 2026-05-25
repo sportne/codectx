@@ -484,6 +484,53 @@ def test_context_command_generates_dependencies_bundle(
     assert "Gateway" in output
 
 
+def test_context_command_generates_call_neighborhood_bundle(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    _write(
+        repo / "src" / "Foo.java",
+        (
+            "class Foo {\n"
+            "  void controller() { target(); }\n"
+            "  void target() {\n"
+            "    validate();\n"
+            "    externalGateway.charge();\n"
+            "  }\n"
+            "  void validate() {}\n"
+            "}\n"
+        ),
+    )
+    db_path = tmp_path / "graph.sqlite"
+    assert main(["index", str(repo), "--db", str(db_path)]) == 0
+    capsys.readouterr()
+
+    assert (
+        main(
+            [
+                "context",
+                "--symbol",
+                "target",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db_path),
+                "--goal",
+                "call-neighborhood",
+                "--format",
+                "json",
+            ]
+        )
+        == 0
+    )
+
+    output = capsys.readouterr().out
+    assert '"goal": "call-neighborhood"' in output
+    assert "neighborhood.callee" in output
+    assert "neighborhood.caller" in output
+    assert "externalGateway.charge" in output
+
+
 def test_index_and_health_commands_persist_and_display_stats(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

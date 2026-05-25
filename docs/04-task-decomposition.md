@@ -1138,7 +1138,7 @@ Acceptance:
 
 ### T082 — Implement `call-neighborhood` goal
 
-Status: todo
+Status: done
 
 Depends on: T063, T072, T073
 

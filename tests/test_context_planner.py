@@ -557,6 +557,97 @@ def test_build_dependencies_bundle_prioritizes_imports_types_and_fields(
     assert any(item.text == "import java.util.List;\n" for item in dependency_items)
 
 
+def test_build_call_neighborhood_bundle_includes_callers_callees_and_unresolved(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_call_neighborhood_graph(store, repo)
+        anchor = resolve_file_line_anchor(store.conn, snapshot_id, "src/Foo.java", 5)
+        assert isinstance(anchor, AnchorResult)
+
+        bundle = build_context_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=1000,
+            index_health={},
+            query={"goal": "call-neighborhood", "budget": 1000},
+        )
+
+    item_by_name = {
+        item.metadata.get("node_name"): item
+        for item in bundle.items
+        if item.metadata.get("node_name") is not None
+    }
+    assert item_by_name["validate"].kind == "neighborhood.callee"
+    assert item_by_name["controller"].kind == "neighborhood.caller"
+    assert item_by_name["controller"].metadata["direction"] == "in"
+    assert item_by_name["validate"].score_trace["goal_relevance"] == 1.8
+    assert item_by_name["controller"].score_trace["goal_relevance"] == 2.0
+    assert any("externalGateway.charge" in note for note in bundle.uncertainty_notes)
+
+
+def test_build_call_neighborhood_bundle_uses_source_fallback_for_callers(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_call_neighborhood_graph(
+            store, repo, include_caller_chunk=False
+        )
+        anchor = resolve_file_line_anchor(store.conn, snapshot_id, "src/Foo.java", 5)
+        assert isinstance(anchor, AnchorResult)
+
+        bundle = build_context_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=1000,
+            index_health={},
+            query={"goal": "call-neighborhood", "budget": 1000},
+        )
+
+    caller = next(
+        item for item in bundle.items if item.metadata.get("node_name") == "controller"
+    )
+    assert caller.kind == "neighborhood.caller"
+    assert caller.text == "  void controller() { target(); }\n"
+    assert "Direct caller used source fallback." in bundle.uncertainty_notes
+
+
+def test_build_call_neighborhood_bundle_prunes_by_budget_after_call_context(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_call_neighborhood_graph(store, repo)
+        anchor = resolve_file_line_anchor(store.conn, snapshot_id, "src/Foo.java", 5)
+        assert isinstance(anchor, AnchorResult)
+
+        bundle = build_context_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=68,
+            index_health={},
+            query={"goal": "call-neighborhood", "budget": 68},
+        )
+
+    item_names = [item.metadata.get("node_name") for item in bundle.items]
+    assert item_names == ["target", "Foo", "validate"]
+    assert bundle.items[2].kind == "neighborhood.callee"
+    assert [(omitted.name, omitted.reason) for omitted in bundle.omitted] == [
+        ("src/Foo.java:2", "budget")
+    ]
+
+
 def _seed_explain_graph(
     store: GraphStore, repo: Path, *, include_type_chunk: bool = True
 ) -> int:
@@ -1275,6 +1366,156 @@ def _seed_dependencies_graph(store: GraphStore, repo: Path) -> int:
         file_ids,
         node_ids,
     )
+    return snapshot_id
+
+
+def _seed_call_neighborhood_graph(
+    store: GraphStore, repo: Path, *, include_caller_chunk: bool = True
+) -> int:
+    source = (
+        "class Foo {\n"
+        "  void controller() { target(); }\n"
+        "  void helper() {}\n"
+        "  void target() {\n"
+        "    validate();\n"
+        "    externalGateway.charge();\n"
+        "  }\n"
+        "  void validate() {}\n"
+        "}\n"
+    )
+    _write(repo / "src" / "Foo.java", source)
+    store.apply_schema()
+    repo_id = store.create_repo(repo)
+    snapshot_id = store.create_snapshot(repo_id)
+    file_ids = store.insert_files(
+        snapshot_id,
+        [
+            FileRecord(
+                path="src/Foo.java",
+                language="java",
+                content_hash="call-neighborhood",
+                size_bytes=len(source.encode("utf-8")),
+                line_count=9,
+            )
+        ],
+    )
+    nodes = [
+        _java_node(
+            "type",
+            "Foo",
+            "Foo",
+            "java:src/Foo.java#Foo",
+            "src/Foo.java",
+            1,
+            9,
+        ),
+        _java_node(
+            "callable",
+            "controller",
+            "Foo.controller()",
+            "java:src/Foo.java#Foo.controller()",
+            "src/Foo.java",
+            2,
+            2,
+        ),
+        _java_node(
+            "callable",
+            "target",
+            "Foo.target()",
+            "java:src/Foo.java#Foo.target()",
+            "src/Foo.java",
+            4,
+            7,
+        ),
+        _java_node(
+            "callable",
+            "validate",
+            "Foo.validate()",
+            "java:src/Foo.java#Foo.validate()",
+            "src/Foo.java",
+            8,
+            8,
+        ),
+    ]
+    node_ids = store.insert_nodes(snapshot_id, nodes, file_ids)
+    store.insert_edges(
+        snapshot_id,
+        [
+            _edge(
+                "calls",
+                "java:src/Foo.java#Foo.target()",
+                "java:src/Foo.java#Foo.validate()",
+                "src/Foo.java",
+                5,
+            ),
+            _edge(
+                "calls",
+                "java:src/Foo.java#Foo.target()",
+                None,
+                "src/Foo.java",
+                6,
+                unresolved_dst="externalGateway.charge",
+                confidence=0.35,
+            ),
+            _edge(
+                "calls",
+                "java:src/Foo.java#Foo.controller()",
+                "java:src/Foo.java#Foo.target()",
+                "src/Foo.java",
+                2,
+            ),
+        ],
+        file_ids,
+        node_ids,
+    )
+    chunks = [
+        ChunkFact(
+            file_path="src/Foo.java",
+            node_key="java:src/Foo.java#Foo",
+            kind="definition",
+            start_line=1,
+            end_line=9,
+            text=source,
+            token_estimate=40,
+        ),
+        ChunkFact(
+            file_path="src/Foo.java",
+            node_key="java:src/Foo.java#Foo.target()",
+            kind="definition",
+            start_line=4,
+            end_line=7,
+            text=(
+                "  void target() {\n"
+                "    validate();\n"
+                "    externalGateway.charge();\n"
+                "  }\n"
+            ),
+            token_estimate=16,
+        ),
+        ChunkFact(
+            file_path="src/Foo.java",
+            node_key="java:src/Foo.java#Foo.validate()",
+            kind="definition",
+            start_line=8,
+            end_line=8,
+            text="  void validate() {}\n",
+            token_estimate=5,
+        ),
+    ]
+    if include_caller_chunk:
+        chunks.insert(
+            1,
+            ChunkFact(
+                file_path="src/Foo.java",
+                node_key="java:src/Foo.java#Foo.controller()",
+                kind="definition",
+                start_line=2,
+                end_line=2,
+                text="  void controller() { target(); }\n",
+                token_estimate=8,
+            ),
+        )
+    store.insert_chunks(chunks, file_ids, node_ids)
     return snapshot_id
 
 

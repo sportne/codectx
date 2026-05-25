@@ -61,6 +61,10 @@ def build_context_bundle(
         trace.append({"stage": "candidate", "kind": candidate.kind, "required": True})
 
     relationship_candidates = _relationship_candidates(conn, repo_path, anchor, notes)
+    if goal == "call-neighborhood":
+        relationship_candidates.extend(
+            _incoming_call_candidates(conn, repo_path, anchor, notes)
+        )
     test_candidates = _test_candidates(conn, anchor, _selected_chunk_ids(candidates))
     diagnostic_candidates = (
         _diagnostic_candidates(conn, repo_path, snapshot_id, anchor, notes)
@@ -584,6 +588,121 @@ def _relationship_candidate(
             if row["dst_symbol_key"] is None
             else str(row["dst_symbol_key"]),
         },
+    )
+
+
+def _incoming_call_candidates(
+    conn: Any,
+    repo: Path,
+    anchor: AnchorResult,
+    notes: list[str],
+) -> list[_Candidate]:
+    if anchor.node_id is None:
+        return []
+    rows = conn.execute(
+        """
+        SELECT edge.id AS edge_id, edge.kind AS edge_kind,
+               edge.confidence AS edge_confidence, edge.extractor AS edge_extractor,
+               edge.metadata_json AS edge_metadata_json, src.id AS src_id,
+               src.kind AS src_kind, src.name AS src_name,
+               src.qualified_name AS src_qualified_name,
+               src.symbol_key AS src_symbol_key, src.file_id AS src_file_id,
+               src.start_line AS src_start_line, src.end_line AS src_end_line,
+               src.confidence AS src_confidence, src.extractor AS src_extractor,
+               file.path AS src_file_path
+        FROM edge
+        JOIN node AS src ON src.id = edge.src_node_id
+        LEFT JOIN file ON file.id = src.file_id
+        WHERE edge.snapshot_id = ?
+          AND edge.dst_node_id = ?
+          AND edge.kind = 'calls'
+        ORDER BY edge.start_line ASC, edge.id ASC
+        """,
+        (_snapshot_id_for_file(conn, anchor.file_id), anchor.node_id),
+    ).fetchall()
+    candidates: list[_Candidate] = []
+    for row in rows:
+        candidate = _incoming_call_candidate(conn, repo, row, notes)
+        if candidate is not None:
+            candidates.append(candidate)
+    return candidates
+
+
+def _incoming_call_candidate(
+    conn: Any,
+    repo: Path,
+    row: Any,
+    notes: list[str],
+) -> _Candidate | None:
+    if row["src_file_id"] is not None:
+        chunk = _chunk_for_node(conn, int(row["src_file_id"]), int(row["src_id"]))
+        if chunk is not None:
+            candidate = _relationship_from_chunk(
+                chunk,
+                row,
+                "neighborhood.caller",
+                "direct caller",
+                3.6,
+            )
+            return _with_direction_metadata(candidate, "in")
+    if (
+        row["src_file_path"] is None
+        or row["src_start_line"] is None
+        or row["src_end_line"] is None
+    ):
+        return None
+    snippet = _source_snippet(
+        repo,
+        str(row["src_file_path"]),
+        int(row["src_start_line"]),
+        int(row["src_end_line"]),
+        notes,
+    )
+    if snippet is None:
+        return None
+    notes.append("Direct caller used source fallback.")
+    return _Candidate(
+        kind="neighborhood.caller",
+        file=snippet.file_path,
+        line_range=(snippet.start_line, snippet.end_line),
+        text=snippet.text,
+        score=3.6,
+        token_estimate=snippet.token_estimate,
+        reason="direct caller",
+        confidence=float(row["edge_confidence"]),
+        extractor=str(row["edge_extractor"]),
+        metadata={
+            **_metadata(str(row["edge_metadata_json"])),
+            "direction": "in",
+            "edge_id": int(row["edge_id"]),
+            "edge_kind": str(row["edge_kind"]),
+            "node_id": int(row["src_id"]),
+            "node_kind": str(row["src_kind"]),
+            "node_name": None if row["src_name"] is None else str(row["src_name"]),
+            "qualified_name": None
+            if row["src_qualified_name"] is None
+            else str(row["src_qualified_name"]),
+            "symbol_key": None
+            if row["src_symbol_key"] is None
+            else str(row["src_symbol_key"]),
+        },
+    )
+
+
+def _with_direction_metadata(candidate: _Candidate, direction: str) -> _Candidate:
+    return _Candidate(
+        kind=candidate.kind,
+        file=candidate.file,
+        line_range=candidate.line_range,
+        text=candidate.text,
+        score=candidate.score,
+        token_estimate=candidate.token_estimate,
+        reason=candidate.reason,
+        confidence=candidate.confidence,
+        extractor=candidate.extractor,
+        required=candidate.required,
+        metadata={**candidate.metadata, "direction": direction},
+        score_trace=candidate.score_trace,
     )
 
 

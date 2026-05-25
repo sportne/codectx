@@ -265,3 +265,36 @@ def test_dependencies_goal_boosts_constructor_like_callees() -> None:
 
     assert constructor.score > regular.score
     assert constructor.score_trace["goal_relevance"] == 1.6
+
+
+def test_call_neighborhood_goal_boosts_callers_and_callees() -> None:
+    anchor = RankingAnchor(file_path="src/Foo.java", line=5, node_name="target")
+    caller = score_candidate(
+        RankingCandidate(
+            kind="neighborhood.caller",
+            file_path="src/Foo.java",
+            line_range=(1, 3),
+            text="void caller() { target(); }\n",
+            token_estimate=8,
+            confidence=0.7,
+            metadata={"edge_id": 40, "edge_kind": "calls", "node_name": "caller"},
+        ),
+        anchor,
+        goal="call-neighborhood",
+    )
+    sibling = score_candidate(
+        RankingCandidate(
+            kind="sibling.definition",
+            file_path="src/Foo.java",
+            line_range=(8, 8),
+            text="void helper() {}\n",
+            token_estimate=5,
+            confidence=0.8,
+            metadata={"node_name": "helper"},
+        ),
+        anchor,
+        goal="call-neighborhood",
+    )
+
+    assert caller.score > sibling.score
+    assert caller.score_trace["goal_relevance"] == 2.0
