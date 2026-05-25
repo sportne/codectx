@@ -5,7 +5,10 @@ from pathlib import Path
 import pytest
 
 from codectx.cli import build_parser, main
+from codectx.frontends.base import EdgeFact, NodeFact
 from codectx.graph.store import GraphStore
+from codectx.scanner.models import FileRecord
+from codectx.source.spans import SourceSpan
 
 
 def test_parser_accepts_all_initial_commands() -> None:
@@ -284,6 +287,160 @@ def test_search_command_reports_missing_index(
     assert "codectx index" in output
 
 
+def test_inspect_node_command_displays_node_details(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    db_path = tmp_path / "graph.sqlite"
+    with GraphStore(db_path) as store:
+        ids = _seed_inspection_graph(store, repo)
+
+    assert (
+        main(
+            [
+                "inspect-node",
+                str(ids["node_id"]),
+                "--repo",
+                str(repo),
+                "--db",
+                str(db_path),
+            ]
+        )
+        == 0
+    )
+
+    output = capsys.readouterr().out
+    assert f"Node {ids['node_id']}" in output
+    assert "kind: type" in output
+    assert "language: java" in output
+    assert "qualified_name: acme.Foo" in output
+    assert "file: src/Foo.java:1-3" in output
+    assert 'metadata: {"visibility":"public"}' in output
+
+
+def test_inspect_edge_command_displays_edge_details(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    db_path = tmp_path / "graph.sqlite"
+    with GraphStore(db_path) as store:
+        ids = _seed_inspection_graph(store, repo)
+
+    assert (
+        main(
+            [
+                "inspect-edge",
+                str(ids["edge_id"]),
+                "--repo",
+                str(repo),
+                "--db",
+                str(db_path),
+            ]
+        )
+        == 0
+    )
+
+    output = capsys.readouterr().out
+    assert f"Edge {ids['edge_id']}" in output
+    assert "kind: calls" in output
+    assert "source: id=" in output
+    assert "type acme.Foo" in output
+    assert "destination: <none>" in output
+    assert "unresolved_src: legacy source label" in output
+    assert "unresolved_dst: acme.Missing" in output
+    assert "file: src/Foo.java:1-3" in output
+    assert "confidence: 0.8" in output
+    assert "weight: 0.25" in output
+    assert 'metadata: {"reason":"fixture"}' in output
+
+
+def test_inspect_commands_report_missing_records(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    db_path = tmp_path / "graph.sqlite"
+    with GraphStore(db_path) as store:
+        _seed_inspection_graph(store, repo)
+
+    assert main(["inspect-node", "999", "--repo", str(repo), "--db", str(db_path)]) == 1
+    assert "Node 999 was not found" in capsys.readouterr().out
+
+    assert main(["inspect-edge", "999", "--repo", str(repo), "--db", str(db_path)]) == 1
+    assert "Edge 999 was not found" in capsys.readouterr().out
+
+
 def _write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+
+
+def _seed_inspection_graph(store: GraphStore, repo: Path) -> dict[str, int]:
+    store.apply_schema()
+    repo_id = store.create_repo(repo)
+    snapshot_id = store.create_snapshot(repo_id)
+    file_ids = store.insert_files(
+        snapshot_id,
+        [
+            FileRecord(
+                path="src/Foo.java",
+                language="java",
+                content_hash="abc123",
+                size_bytes=40,
+                line_count=3,
+            )
+        ],
+    )
+    span = SourceSpan(
+        file_path="src/Foo.java",
+        start_byte=0,
+        end_byte=20,
+        start_line=1,
+        start_col=0,
+        end_line=3,
+        end_col=1,
+    )
+    node_ids = store.insert_nodes(
+        snapshot_id,
+        [
+            NodeFact(
+                kind="type",
+                language="java",
+                name="Foo",
+                qualified_name="acme.Foo",
+                symbol_key="java:src/Foo.java#Foo",
+                file_path="src/Foo.java",
+                span=span,
+                confidence=0.95,
+                extractor="test",
+                metadata={"visibility": "public"},
+            )
+        ],
+        file_ids,
+    )
+    edge_ids = store.insert_edges(
+        snapshot_id,
+        [
+            EdgeFact(
+                kind="calls",
+                src_key="java:src/Foo.java#Foo",
+                dst_key=None,
+                unresolved_src="legacy source label",
+                unresolved_dst="acme.Missing",
+                file_path="src/Foo.java",
+                span=span,
+                confidence=0.8,
+                extractor="test",
+                weight=0.25,
+                metadata={"reason": "fixture"},
+            )
+        ],
+        file_ids,
+        node_ids,
+    )
+    return {
+        "node_id": node_ids["java:src/Foo.java#Foo"],
+        "edge_id": edge_ids[0],
+    }

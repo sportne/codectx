@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
+from json import loads
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -46,6 +48,112 @@ class CombinedSearchResult:
     symbols: list[SymbolResult]
     chunks: list[ChunkSearchResult]
     used_fts: bool
+
+
+@dataclass(frozen=True)
+class NodeDetail:
+    """Detailed graph node inspection result."""
+
+    node_id: int
+    kind: str
+    language: str | None
+    name: str | None
+    qualified_name: str | None
+    symbol_key: str | None
+    file_path: str | None
+    start_byte: int | None
+    end_byte: int | None
+    start_line: int | None
+    end_line: int | None
+    confidence: float
+    extractor: str
+    metadata: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class EdgeEndpoint:
+    """Resolved endpoint details for an inspected edge."""
+
+    node_id: int
+    kind: str
+    name: str | None
+    qualified_name: str | None
+    symbol_key: str | None
+
+
+@dataclass(frozen=True)
+class EdgeDetail:
+    """Detailed graph edge inspection result."""
+
+    edge_id: int
+    kind: str
+    source: EdgeEndpoint | None
+    destination: EdgeEndpoint | None
+    unresolved_src: str | None
+    unresolved_dst: str | None
+    file_path: str | None
+    start_byte: int | None
+    end_byte: int | None
+    start_line: int | None
+    end_line: int | None
+    confidence: float
+    weight: float
+    extractor: str
+    metadata: dict[str, Any]
+
+
+def get_node_detail(
+    conn: sqlite3.Connection,
+    snapshot_id: int,
+    node_id: int,
+) -> NodeDetail | None:
+    """Read a node inspection record by id within a snapshot."""
+    row = conn.execute(
+        """
+        SELECT node.id, node.kind, node.language, node.name, node.qualified_name,
+               node.symbol_key, file.path AS file_path, node.start_byte,
+               node.end_byte, node.start_line, node.end_line, node.confidence,
+               node.extractor, node.metadata_json
+        FROM node
+        LEFT JOIN file ON file.id = node.file_id
+        WHERE node.snapshot_id = ? AND node.id = ?
+        """,
+        (snapshot_id, node_id),
+    ).fetchone()
+    if row is None:
+        return None
+    return _node_detail(row)
+
+
+def get_edge_detail(
+    conn: sqlite3.Connection,
+    snapshot_id: int,
+    edge_id: int,
+) -> EdgeDetail | None:
+    """Read an edge inspection record by id within a snapshot."""
+    row = conn.execute(
+        """
+        SELECT edge.id, edge.kind, edge.unresolved_src, edge.unresolved_dst,
+               file.path AS file_path, edge.start_byte, edge.end_byte,
+               edge.start_line, edge.end_line, edge.confidence, edge.weight,
+               edge.extractor, edge.metadata_json,
+               src.id AS src_id, src.kind AS src_kind, src.name AS src_name,
+               src.qualified_name AS src_qualified_name,
+               src.symbol_key AS src_symbol_key,
+               dst.id AS dst_id, dst.kind AS dst_kind, dst.name AS dst_name,
+               dst.qualified_name AS dst_qualified_name,
+               dst.symbol_key AS dst_symbol_key
+        FROM edge
+        LEFT JOIN file ON file.id = edge.file_id
+        LEFT JOIN node AS src ON src.id = edge.src_node_id
+        LEFT JOIN node AS dst ON dst.id = edge.dst_node_id
+        WHERE edge.snapshot_id = ? AND edge.id = ?
+        """,
+        (snapshot_id, edge_id),
+    ).fetchone()
+    if row is None:
+        return None
+    return _edge_detail(row)
 
 
 def search(
@@ -330,3 +438,76 @@ def _chunk_result(row: sqlite3.Row, score: int) -> ChunkSearchResult:
         token_estimate=int(row["token_estimate"]),
         score=score,
     )
+
+
+def _node_detail(row: sqlite3.Row) -> NodeDetail:
+    return NodeDetail(
+        node_id=int(row["id"]),
+        kind=str(row["kind"]),
+        language=None if row["language"] is None else str(row["language"]),
+        name=None if row["name"] is None else str(row["name"]),
+        qualified_name=(
+            None if row["qualified_name"] is None else str(row["qualified_name"])
+        ),
+        symbol_key=None if row["symbol_key"] is None else str(row["symbol_key"]),
+        file_path=None if row["file_path"] is None else str(row["file_path"]),
+        start_byte=None if row["start_byte"] is None else int(row["start_byte"]),
+        end_byte=None if row["end_byte"] is None else int(row["end_byte"]),
+        start_line=None if row["start_line"] is None else int(row["start_line"]),
+        end_line=None if row["end_line"] is None else int(row["end_line"]),
+        confidence=float(row["confidence"]),
+        extractor=str(row["extractor"]),
+        metadata=_metadata(row["metadata_json"]),
+    )
+
+
+def _edge_detail(row: sqlite3.Row) -> EdgeDetail:
+    return EdgeDetail(
+        edge_id=int(row["id"]),
+        kind=str(row["kind"]),
+        source=_endpoint(row, "src"),
+        destination=_endpoint(row, "dst"),
+        unresolved_src=(
+            None if row["unresolved_src"] is None else str(row["unresolved_src"])
+        ),
+        unresolved_dst=(
+            None if row["unresolved_dst"] is None else str(row["unresolved_dst"])
+        ),
+        file_path=None if row["file_path"] is None else str(row["file_path"]),
+        start_byte=None if row["start_byte"] is None else int(row["start_byte"]),
+        end_byte=None if row["end_byte"] is None else int(row["end_byte"]),
+        start_line=None if row["start_line"] is None else int(row["start_line"]),
+        end_line=None if row["end_line"] is None else int(row["end_line"]),
+        confidence=float(row["confidence"]),
+        weight=float(row["weight"]),
+        extractor=str(row["extractor"]),
+        metadata=_metadata(row["metadata_json"]),
+    )
+
+
+def _endpoint(row: sqlite3.Row, prefix: str) -> EdgeEndpoint | None:
+    node_id = row[f"{prefix}_id"]
+    if node_id is None:
+        return None
+    return EdgeEndpoint(
+        node_id=int(node_id),
+        kind=str(row[f"{prefix}_kind"]),
+        name=None if row[f"{prefix}_name"] is None else str(row[f"{prefix}_name"]),
+        qualified_name=(
+            None
+            if row[f"{prefix}_qualified_name"] is None
+            else str(row[f"{prefix}_qualified_name"])
+        ),
+        symbol_key=(
+            None
+            if row[f"{prefix}_symbol_key"] is None
+            else str(row[f"{prefix}_symbol_key"])
+        ),
+    )
+
+
+def _metadata(value: str) -> dict[str, Any]:
+    metadata = loads(value)
+    if isinstance(metadata, dict):
+        return metadata
+    return {}

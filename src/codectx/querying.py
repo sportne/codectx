@@ -6,7 +6,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from codectx.context.anchors import AnchorError, AnchorResult, resolve_file_line_anchor
-from codectx.graph.query import ChunkSearchResult, CombinedSearchResult, SymbolResult
+from codectx.graph.query import (
+    ChunkSearchResult,
+    CombinedSearchResult,
+    EdgeDetail,
+    NodeDetail,
+    SymbolResult,
+)
+from codectx.graph.query import get_edge_detail as graph_get_edge_detail
+from codectx.graph.query import get_node_detail as graph_get_node_detail
 from codectx.graph.query import search as graph_search
 from codectx.graph.query import search_symbols as graph_search_symbols
 from codectx.graph.store import GraphStore
@@ -68,6 +76,26 @@ class FileLineAnchorResult:
     db_path: Path
     snapshot_id: int
     anchor: AnchorResult
+
+
+@dataclass(frozen=True)
+class NodeInspectionResult:
+    """Node inspection response for CLI rendering."""
+
+    repo: Path
+    db_path: Path
+    snapshot_id: int
+    node: NodeDetail
+
+
+@dataclass(frozen=True)
+class EdgeInspectionResult:
+    """Edge inspection response for CLI rendering."""
+
+    repo: Path
+    db_path: Path
+    snapshot_id: int
+    edge: EdgeDetail
 
 
 def resolve_query_context(
@@ -159,6 +187,58 @@ def search(
         symbols=result.symbols,
         chunks=result.chunks,
         used_fts=result.used_fts,
+    )
+
+
+def inspect_node(
+    repo: str | Path,
+    node_id: int,
+    *,
+    db_path: str | Path | None = None,
+) -> NodeInspectionResult | QueryingError:
+    """Inspect an indexed graph node by id."""
+    context = resolve_query_context(repo, db_path=db_path)
+    if isinstance(context, QueryingError):
+        return context
+
+    with GraphStore(context.db_path) as store:
+        node = graph_get_node_detail(store.conn, context.snapshot_id, node_id)
+    if node is None:
+        return QueryingError(
+            f"Node {node_id} was not found in the latest codectx snapshot."
+        )
+
+    return NodeInspectionResult(
+        repo=context.repo,
+        db_path=context.db_path,
+        snapshot_id=context.snapshot_id,
+        node=node,
+    )
+
+
+def inspect_edge(
+    repo: str | Path,
+    edge_id: int,
+    *,
+    db_path: str | Path | None = None,
+) -> EdgeInspectionResult | QueryingError:
+    """Inspect an indexed graph edge by id."""
+    context = resolve_query_context(repo, db_path=db_path)
+    if isinstance(context, QueryingError):
+        return context
+
+    with GraphStore(context.db_path) as store:
+        edge = graph_get_edge_detail(store.conn, context.snapshot_id, edge_id)
+    if edge is None:
+        return QueryingError(
+            f"Edge {edge_id} was not found in the latest codectx snapshot."
+        )
+
+    return EdgeInspectionResult(
+        repo=context.repo,
+        db_path=context.db_path,
+        snapshot_id=context.snapshot_id,
+        edge=edge,
     )
 
 

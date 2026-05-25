@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+from json import dumps
 from pathlib import Path
 
 from codectx import __version__
+from codectx.graph.query import EdgeEndpoint
 from codectx.indexing import (
     HealthResult,
     IndexingError,
@@ -14,9 +16,13 @@ from codectx.indexing import (
     run_index,
 )
 from codectx.querying import (
+    EdgeInspectionResult,
+    NodeInspectionResult,
     PlaceholderResult,
     SearchResult,
     SymbolSearchResult,
+    inspect_edge,
+    inspect_node,
     placeholder_result,
     search,
     search_symbols,
@@ -106,12 +112,11 @@ def main(argv: list[str] | None = None) -> int:
         return _run_symbols(args)
     if args.command == "search":
         return _run_search(args)
-    if args.command in {
-        "context",
-        "inspect-edge",
-        "inspect-node",
-        "neighborhood",
-    }:
+    if args.command == "inspect-node":
+        return _run_inspect_node(args)
+    if args.command == "inspect-edge":
+        return _run_inspect_edge(args)
+    if args.command in {"context", "neighborhood"}:
         return _run_query_placeholder(args)
 
     raise AssertionError(f"unhandled command: {args.command}")
@@ -160,6 +165,26 @@ def _run_search(args: argparse.Namespace) -> int:
         return 1
 
     _print_search_result(result)
+    return 0
+
+
+def _run_inspect_node(args: argparse.Namespace) -> int:
+    result = inspect_node(args.repo, args.node_id, db_path=args.db)
+    if isinstance(result, QueryServiceError):
+        print(result.message)
+        return 1
+
+    _print_node_inspection_result(result)
+    return 0
+
+
+def _run_inspect_edge(args: argparse.Namespace) -> int:
+    result = inspect_edge(args.repo, args.edge_id, db_path=args.db)
+    if isinstance(result, QueryServiceError):
+        print(result.message)
+        return 1
+
+    _print_edge_inspection_result(result)
     return 0
 
 
@@ -239,6 +264,53 @@ def _print_search_result(result: SearchResult) -> None:
             )
 
 
+def _print_node_inspection_result(result: NodeInspectionResult) -> None:
+    node = result.node
+    print(f"Node {node.node_id}")
+    print(f"kind: {node.kind}")
+    if node.language is not None:
+        print(f"language: {node.language}")
+    if node.name is not None:
+        print(f"name: {node.name}")
+    if node.qualified_name is not None:
+        print(f"qualified_name: {node.qualified_name}")
+    if node.symbol_key is not None:
+        print(f"symbol_key: {node.symbol_key}")
+    print(f"file: {_format_location(node.file_path, node.start_line, node.end_line)}")
+    print(f"byte_span: {_format_byte_span(node.start_byte, node.end_byte)}")
+    print(f"extractor: {node.extractor}")
+    print(f"confidence: {node.confidence:g}")
+    print(f"metadata: {_format_metadata(node.metadata)}")
+
+
+def _print_edge_inspection_result(result: EdgeInspectionResult) -> None:
+    edge = result.edge
+    print(f"Edge {edge.edge_id}")
+    print(f"kind: {edge.kind}")
+    print(f"source: {_format_endpoint(edge.source)}")
+    print(f"destination: {_format_endpoint(edge.destination)}")
+    print(f"unresolved_src: {_format_optional(edge.unresolved_src)}")
+    print(f"unresolved_dst: {_format_optional(edge.unresolved_dst)}")
+    print(f"file: {_format_location(edge.file_path, edge.start_line, edge.end_line)}")
+    print(f"byte_span: {_format_byte_span(edge.start_byte, edge.end_byte)}")
+    print(f"extractor: {edge.extractor}")
+    print(f"confidence: {edge.confidence:g}")
+    print(f"weight: {edge.weight:g}")
+    print(f"metadata: {_format_metadata(edge.metadata)}")
+
+
+def _format_endpoint(endpoint: EdgeEndpoint | None) -> str:
+    if endpoint is None:
+        return "<none>"
+
+    node_id = endpoint.node_id
+    kind = endpoint.kind
+    name = endpoint.qualified_name or endpoint.name
+    symbol_key = endpoint.symbol_key
+    label = name or symbol_key or "<unnamed>"
+    return f"id={node_id} {kind} {label}"
+
+
 def _format_location(
     file_path: str | None, start_line: int | None, end_line: int | None
 ) -> str:
@@ -249,6 +321,20 @@ def _format_location(
     if end_line is None or end_line == start_line:
         return f"{file_path}:{start_line}"
     return f"{file_path}:{start_line}-{end_line}"
+
+
+def _format_byte_span(start_byte: int | None, end_byte: int | None) -> str:
+    if start_byte is None or end_byte is None:
+        return "<unknown>"
+    return f"{start_byte}-{end_byte}"
+
+
+def _format_optional(value: str | None) -> str:
+    return "<none>" if value is None else value
+
+
+def _format_metadata(metadata: dict[str, object]) -> str:
+    return dumps(metadata, sort_keys=True, separators=(",", ":"))
 
 
 if __name__ == "__main__":

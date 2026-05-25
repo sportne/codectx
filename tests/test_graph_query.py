@@ -4,8 +4,10 @@ import sqlite3
 from pathlib import Path
 
 import codectx.graph.query as graph_query
-from codectx.frontends.base import ChunkFact, NodeFact
+from codectx.frontends.base import ChunkFact, EdgeFact, NodeFact
 from codectx.graph.query import (
+    get_edge_detail,
+    get_node_detail,
     search,
     search_chunks_like,
     search_symbols,
@@ -164,6 +166,71 @@ def test_search_falls_back_to_like_when_fts_query_fails(
     assert [chunk.file_path for chunk in result.chunks] == ["src/PaymentService.java"]
 
 
+def test_get_node_detail_returns_stable_inspection_fields(tmp_path: Path) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_symbols(store, tmp_path)
+        node_id = store.conn.execute(
+            "SELECT id FROM node WHERE name = 'PaymentService'"
+        ).fetchone()["id"]
+
+        detail = get_node_detail(store.conn, snapshot_id, int(node_id))
+
+    assert detail is not None
+    assert detail.kind == "type"
+    assert detail.language == "java"
+    assert detail.name == "PaymentService"
+    assert detail.qualified_name == "acme.PaymentService"
+    assert detail.symbol_key == "java:src/PaymentService.java#PaymentService"
+    assert detail.file_path == "src/PaymentService.java"
+    assert detail.start_byte == 0
+    assert detail.end_byte == 10
+    assert detail.start_line == 1
+    assert detail.end_line == 3
+    assert detail.confidence == 1.0
+    assert detail.extractor == "test"
+    assert detail.metadata == {"visibility": "public"}
+
+
+def test_get_edge_detail_returns_resolved_and_unresolved_endpoints(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_symbols(store, tmp_path)
+        edge_id = store.conn.execute(
+            "SELECT id FROM edge WHERE unresolved_dst = 'acme.Missing'"
+        ).fetchone()["id"]
+
+        detail = get_edge_detail(store.conn, snapshot_id, int(edge_id))
+
+    assert detail is not None
+    assert detail.kind == "calls"
+    assert detail.source is not None
+    assert detail.source.qualified_name == "acme.Authorizer.authorizePayment"
+    assert detail.destination is None
+    assert detail.unresolved_dst == "acme.Missing"
+    assert detail.file_path == "src/PaymentService.java"
+    assert detail.start_line == 1
+    assert detail.end_line == 3
+    assert detail.confidence == 0.7
+    assert detail.weight == 0.5
+    assert detail.extractor == "test"
+    assert detail.metadata == {"reason": "fixture"}
+
+
+def test_get_inspection_detail_returns_none_for_missing_ids(tmp_path: Path) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_symbols(store, tmp_path)
+
+        node_detail = get_node_detail(store.conn, snapshot_id, 9999)
+        edge_detail = get_edge_detail(store.conn, snapshot_id, 9999)
+
+    assert node_detail is None
+    assert edge_detail is None
+
+
 def _seed_symbols(store: GraphStore, repo: Path) -> int:
     store.apply_schema()
     repo_id = store.create_repo(repo)
@@ -221,7 +288,7 @@ def _seed_symbols(store: GraphStore, repo: Path) -> int:
                 span=span,
                 confidence=1.0,
                 extractor="test",
-                metadata={},
+                metadata={"visibility": "public"},
             ),
             NodeFact(
                 kind="type",
@@ -285,6 +352,26 @@ def _seed_symbols(store: GraphStore, repo: Path) -> int:
             ),
         ],
         file_ids,
+    )
+    store.insert_edges(
+        snapshot_id,
+        [
+            EdgeFact(
+                kind="calls",
+                src_key="java:src/PaymentService.java#Authorizer.authorizePayment",
+                dst_key=None,
+                unresolved_src=None,
+                unresolved_dst="acme.Missing",
+                file_path="src/PaymentService.java",
+                span=span,
+                confidence=0.7,
+                extractor="test",
+                weight=0.5,
+                metadata={"reason": "fixture"},
+            )
+        ],
+        file_ids,
+        node_ids,
     )
     store.insert_chunks(
         [

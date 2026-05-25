@@ -631,7 +631,7 @@ Acceptance:
 
 ### T043 — Implement node and edge inspection
 
-Status: todo
+Status: done
 
 Depends on: T035
 
