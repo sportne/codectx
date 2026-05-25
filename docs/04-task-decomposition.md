@@ -748,7 +748,7 @@ Acceptance:
 
 ### T053 — Implement JSON formatter
 
-Status: todo
+Status: done
 
 Depends on: T050, T051
 

@@ -82,6 +82,7 @@ detect_language  # scanner public API
 byte_range_to_span  # source coordinate conversion API
 estimate_token_count  # source token estimate API
 file_sha256  # scanner hashing public API
+format_json  # context formatter public API
 format_markdown  # context formatter public API
 first_child_by_field_name  # Tree-sitter helper API
 insert_files  # graph store file persistence API

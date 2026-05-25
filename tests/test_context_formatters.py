@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from json import loads
+
 from codectx.context.bundle import ContextBundle, ContextItem, OmittedItem
-from codectx.context.formatters import format_markdown
+from codectx.context.formatters import format_json, format_markdown
 
 
 def test_format_markdown_renders_bundle_with_balanced_code_fences() -> None:
@@ -124,6 +126,26 @@ def test_format_markdown_uses_longer_fence_for_embedded_backticks() -> None:
 
     assert "````\nbefore\n```python\nprint('nested')\n```\nafter\n````" in rendered
     assert rendered.count("````") == 2
+
+
+def test_format_json_serializes_bundle_with_required_fields() -> None:
+    rendered = format_json(_bundle())
+
+    parsed = loads(rendered)
+
+    assert parsed["query"]["goal"] == "explain"
+    assert parsed["anchor"]["file"] == "src/Foo.java"
+    assert parsed["index_health"]["files"] == "1"
+    assert parsed["items"][0]["line_range"] == [2, 4]
+    assert parsed["items"][0]["text"] == "class Foo {}\n"
+    assert parsed["items"][0]["score"] == 5.0
+    assert parsed["items"][0]["reason"] == "target definition"
+    assert parsed["items"][0]["confidence"] == 0.95
+    assert parsed["items"][0]["metadata"] == {"symbol": "Foo"}
+    assert parsed["omitted"][0]["reason"] == "budget"
+    assert parsed["uncertainty_notes"] == ["parse diagnostics omitted"]
+    assert parsed["trace"] == [{"stage": "rank"}]
+    assert rendered.endswith("\n")
 
 
 def _bundle() -> ContextBundle:

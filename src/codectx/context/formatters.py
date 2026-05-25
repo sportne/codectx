@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from json import dumps
+
 from codectx.context.bundle import ContextBundle
 
 
@@ -60,6 +62,11 @@ def format_markdown(bundle: ContextBundle) -> str:
         lines.append(f"- {_format_mapping_inline(trace_item)}")
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def format_json(bundle: ContextBundle) -> str:
+    """Render a context bundle as stable structured JSON."""
+    return dumps(bundle.to_dict(), indent=2, sort_keys=True) + "\n"
 
 
 def _mapping_lines(values: dict[str, object]) -> list[str]:
