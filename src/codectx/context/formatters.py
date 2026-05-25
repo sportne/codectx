@@ -69,6 +69,55 @@ def format_json(bundle: ContextBundle) -> str:
     return dumps(bundle.to_dict(), indent=2, sort_keys=True) + "\n"
 
 
+def format_text(bundle: ContextBundle) -> str:
+    """Render a context bundle as deterministic plain text."""
+    lines: list[str] = ["codectx context bundle", "", "Query"]
+    lines.extend(_mapping_lines(bundle.query))
+    lines.extend(["", "Anchor"])
+    lines.extend(_mapping_lines(bundle.anchor))
+    lines.extend(["", "Index Health"])
+    lines.extend(_mapping_lines(bundle.index_health))
+    lines.extend(["", "Context Items"])
+    if not bundle.items:
+        lines.append("No context items selected.")
+    for item in bundle.items:
+        lines.extend(
+            [
+                f"{item.rank}. {item.kind}",
+                f"file: {_location(item.file, item.line_range)}",
+                f"reason: {item.reason}",
+                f"score: {item.score:g}",
+                f"confidence: {item.confidence:g}",
+                f"tokens: {item.token_estimate}",
+            ]
+        )
+        if item.extractor is not None:
+            lines.append(f"extractor: {item.extractor}")
+        lines.extend(["snippet:", item.text.rstrip("\n"), ""])
+
+    lines.extend(["Omitted"])
+    if not bundle.omitted:
+        lines.append("None.")
+    for omitted in bundle.omitted:
+        score = "" if omitted.score is None else f" score={omitted.score:g}"
+        name = omitted.name or "<unnamed>"
+        lines.append(f"- {name}: {omitted.reason}{score}")
+
+    lines.extend(["", "Uncertainty"])
+    if not bundle.uncertainty_notes:
+        lines.append("None.")
+    for note in bundle.uncertainty_notes:
+        lines.append(f"- {note}")
+
+    lines.extend(["", "Trace"])
+    if not bundle.trace:
+        lines.append("None.")
+    for trace_item in bundle.trace:
+        lines.append(f"- {_format_mapping_inline(trace_item)}")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def _mapping_lines(values: dict[str, object]) -> list[str]:
     if not values:
         return ["- none"]

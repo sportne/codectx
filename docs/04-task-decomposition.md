@@ -769,7 +769,7 @@ Acceptance:
 
 ### T054 — Implement plain text formatter
 
-Status: todo
+Status: done
 
 Depends on: T050, T051
 

@@ -84,6 +84,7 @@ estimate_token_count  # source token estimate API
 file_sha256  # scanner hashing public API
 format_json  # context formatter public API
 format_markdown  # context formatter public API
+format_text  # context formatter public API
 first_child_by_field_name  # Tree-sitter helper API
 insert_files  # graph store file persistence API
 insert_chunks  # graph store chunk persistence API

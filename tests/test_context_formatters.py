@@ -3,7 +3,7 @@ from __future__ import annotations
 from json import loads
 
 from codectx.context.bundle import ContextBundle, ContextItem, OmittedItem
-from codectx.context.formatters import format_json, format_markdown
+from codectx.context.formatters import format_json, format_markdown, format_text
 
 
 def test_format_markdown_renders_bundle_with_balanced_code_fences() -> None:
@@ -146,6 +146,38 @@ def test_format_json_serializes_bundle_with_required_fields() -> None:
     assert parsed["uncertainty_notes"] == ["parse diagnostics omitted"]
     assert parsed["trace"] == [{"stage": "rank"}]
     assert rendered.endswith("\n")
+
+
+def test_format_text_renders_plain_text_bundle() -> None:
+    rendered = format_text(_bundle())
+
+    assert rendered.startswith("codectx context bundle\n")
+    assert "Query\n- budget: 100\n- goal: explain" in rendered
+    assert "Anchor\n- file: src/Foo.java" in rendered
+    assert "Index Health\n- files: 1\n- nodes: 1" in rendered
+    assert "1. target.definition" in rendered
+    assert "file: src/Foo.java:2-4" in rendered
+    assert "reason: target definition" in rendered
+    assert "score: 5" in rendered
+    assert "confidence: 0.95" in rendered
+    assert "tokens: 4" in rendered
+    assert "extractor: test" in rendered
+    assert "snippet:\nclass Foo {}\n" in rendered
+    assert "- src/Foo.java:9: budget score=0.5" in rendered
+    assert "- parse diagnostics omitted" in rendered
+    assert "```" not in rendered
+
+
+def test_format_text_renders_empty_sections() -> None:
+    rendered = format_text(
+        ContextBundle(query={}, anchor={}, index_health={}, items=[])
+    )
+
+    assert "Query\n- none" in rendered
+    assert "Context Items\nNo context items selected." in rendered
+    assert "Omitted\nNone." in rendered
+    assert "Uncertainty\nNone." in rendered
+    assert "Trace\nNone." in rendered
 
 
 def _bundle() -> ContextBundle:
