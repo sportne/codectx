@@ -512,7 +512,7 @@ Acceptance:
 
 ### T035 — Wire frontends into `codectx index`
 
-Status: todo
+Status: done
 
 Depends on: T022, T023, T033, T034
 

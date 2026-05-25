@@ -55,7 +55,7 @@ milestones:
       - id: T034
         status: done
       - id: T035
-        status: todo
+        status: done
   - id: M4
     name: Symbol search and anchor resolution
     tasks:

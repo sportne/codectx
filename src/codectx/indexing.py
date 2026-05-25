@@ -7,7 +7,16 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from codectx.frontends.base import LanguageFrontend
+from codectx.frontends.base import (
+    ChunkFact,
+    DiagnosticFact,
+    EdgeFact,
+    LanguageFrontend,
+    NodeFact,
+    OccurrenceFact,
+)
+from codectx.frontends.cpp_treesitter import CppTreeSitterFrontend
+from codectx.frontends.java_treesitter import JavaTreeSitterFrontend
 from codectx.graph.store import GraphStore
 from codectx.scanner.models import FileRecord
 from codectx.scanner.repo import scan_repository
@@ -52,12 +61,12 @@ def run_index(
     frontends: FrontendRegistry | None = None,
 ) -> IndexResult | IndexingError:
     """Scan and persist index data for a repository."""
-    del frontends
     repo_path = Path(repo).resolve()
     if not repo_path.exists() or not repo_path.is_dir():
         return IndexingError(
             f"Repository path does not exist or is not a directory: {repo_path}"
         )
+    frontend_registry = default_frontends() if frontends is None else frontends
 
     resolved_db_path = default_db_path(repo_path, db_path)
     resolved_db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -70,7 +79,15 @@ def run_index(
         store.apply_schema()
         repo_id = store.create_repo(repo_path)
         snapshot_id = store.create_snapshot(repo_id, content_fingerprint=fingerprint)
-        store.insert_files(snapshot_id, records)
+        file_ids = store.insert_files(snapshot_id, records)
+        nodes, edges, occurrences, chunks, diagnostics = extract_graph_facts(
+            repo_path, records, frontend_registry
+        )
+        node_ids = store.insert_nodes(snapshot_id, nodes, file_ids)
+        store.insert_edges(snapshot_id, edges, file_ids, node_ids)
+        store.insert_occurrences(occurrences, file_ids, node_ids)
+        store.insert_chunks(chunks, file_ids, node_ids)
+        store.insert_diagnostics(snapshot_id, diagnostics, file_ids)
         stats = store.build_index_stats(snapshot_id)
         store.upsert_index_stats(snapshot_id, stats)
 
@@ -127,6 +144,46 @@ def default_db_path(repo: Path, explicit_db_path: str | Path | None) -> Path:
     if explicit_db_path is not None:
         return Path(explicit_db_path).resolve()
     return repo / ".codectx" / "graph.sqlite"
+
+
+def default_frontends() -> FrontendRegistry:
+    """Return built-in language frontends used by index orchestration."""
+    return {
+        "cpp": CppTreeSitterFrontend(),
+        "java": JavaTreeSitterFrontend(),
+    }
+
+
+def extract_graph_facts(
+    repo: Path,
+    records: list[FileRecord],
+    frontends: FrontendRegistry,
+) -> tuple[
+    list[NodeFact],
+    list[EdgeFact],
+    list[OccurrenceFact],
+    list[ChunkFact],
+    list[DiagnosticFact],
+]:
+    """Extract graph facts for scanned records with registered frontends."""
+    nodes: list[NodeFact] = []
+    edges: list[EdgeFact] = []
+    occurrences: list[OccurrenceFact] = []
+    chunks: list[ChunkFact] = []
+    diagnostics: list[DiagnosticFact] = []
+    for record in records:
+        if record.language is None:
+            continue
+        frontend = frontends.get(record.language)
+        if frontend is None:
+            continue
+        facts = frontend.extract(record.path, (repo / record.path).read_bytes())
+        nodes.extend(facts.nodes)
+        edges.extend(facts.edges)
+        occurrences.extend(facts.occurrences)
+        chunks.extend(facts.chunks)
+        diagnostics.extend(facts.diagnostics)
+    return nodes, edges, occurrences, chunks, diagnostics
 
 
 def remove_db_files(db_path: Path) -> None:
