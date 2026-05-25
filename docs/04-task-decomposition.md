@@ -980,7 +980,7 @@ Acceptance:
 
 ### T070 — Implement scoring model
 
-Status: todo
+Status: done
 
 Depends on: T064
 

@@ -45,6 +45,7 @@ def test_context_bundle_serializes_to_plain_dictionary() -> None:
                 "confidence": 1.0,
                 "extractor": "java-tree-sitter",
                 "metadata": {"symbol": "PaymentService"},
+                "score_trace": {},
             }
         ],
         "omitted": [{"name": "PaymentRepository", "reason": "budget", "score": 0.25}],

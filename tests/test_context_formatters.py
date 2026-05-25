@@ -139,6 +139,7 @@ def test_format_json_serializes_bundle_with_required_fields() -> None:
     assert parsed["items"][0]["line_range"] == [2, 4]
     assert parsed["items"][0]["text"] == "class Foo {}\n"
     assert parsed["items"][0]["score"] == 5.0
+    assert parsed["items"][0]["score_trace"] == {}
     assert parsed["items"][0]["reason"] == "target definition"
     assert parsed["items"][0]["confidence"] == 0.95
     assert parsed["items"][0]["metadata"] == {"symbol": "Foo"}

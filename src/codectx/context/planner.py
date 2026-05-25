@@ -9,6 +9,7 @@ from typing import Any
 
 from codectx.context.anchors import AnchorResult
 from codectx.context.bundle import ContextBundle, ContextItem, OmittedItem
+from codectx.context.ranking import RankingAnchor, RankingCandidate, score_candidate
 from codectx.source.snippets import snippet_by_line_range
 from codectx.source.tokens import estimate_token_count
 
@@ -26,6 +27,7 @@ class _Candidate:
     extractor: str | None
     required: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
+    score_trace: dict[str, float] = field(default_factory=dict)
 
 
 def build_explain_bundle(
@@ -80,6 +82,17 @@ def build_explain_bundle(
         }
     )
 
+    resolved_query = query or {"goal": "explain", "budget": budget}
+    candidates = _score_candidates(candidates, anchor, resolved_query)
+    optional_candidates = _score_candidates(optional_candidates, anchor, resolved_query)
+    trace.append(
+        {
+            "stage": "rank",
+            "required_count": len(candidates),
+            "optional_count": len(optional_candidates),
+        }
+    )
+
     selected, omitted = _select_candidates(candidates, optional_candidates, budget)
     items = [
         ContextItem(
@@ -94,12 +107,13 @@ def build_explain_bundle(
             confidence=candidate.confidence,
             extractor=candidate.extractor,
             metadata=candidate.metadata,
+            score_trace=candidate.score_trace,
         )
         for rank, candidate in enumerate(selected, start=1)
     ]
 
     return ContextBundle(
-        query=query or {"goal": "explain", "budget": budget},
+        query=resolved_query,
         anchor=_anchor_dict(anchor),
         index_health=dict(sorted(index_health.items())),
         items=items,
@@ -616,6 +630,63 @@ def _select_candidates(
                 )
             )
     return selected, omitted
+
+
+def _score_candidates(
+    candidates: list[_Candidate],
+    anchor: AnchorResult,
+    query: dict[str, Any],
+) -> list[_Candidate]:
+    ranking_anchor = RankingAnchor(
+        file_path=anchor.file_path,
+        line=anchor.line,
+        node_name=anchor.node_name,
+        qualified_name=anchor.qualified_name,
+        symbol_key=anchor.symbol_key,
+    )
+    query_text = _query_text(query)
+    scored: list[_Candidate] = []
+    for candidate in candidates:
+        result = score_candidate(
+            RankingCandidate(
+                kind=candidate.kind,
+                file_path=candidate.file,
+                line_range=candidate.line_range,
+                text=candidate.text,
+                token_estimate=candidate.token_estimate,
+                confidence=candidate.confidence,
+                metadata=candidate.metadata,
+            ),
+            ranking_anchor,
+            query_text=query_text,
+        )
+        scored.append(
+            _Candidate(
+                kind=candidate.kind,
+                file=candidate.file,
+                line_range=candidate.line_range,
+                text=candidate.text,
+                score=result.score,
+                token_estimate=candidate.token_estimate,
+                reason=candidate.reason,
+                confidence=candidate.confidence,
+                extractor=candidate.extractor,
+                required=candidate.required,
+                metadata=candidate.metadata,
+                score_trace=result.score_trace,
+            )
+        )
+    return scored
+
+
+def _query_text(query: dict[str, Any]) -> str | None:
+    symbol = query.get("symbol")
+    if symbol is not None:
+        return str(symbol)
+    file_path = query.get("file")
+    if file_path is not None:
+        return str(file_path)
+    return None
 
 
 def _chunk_for_node(conn: Any, file_id: int, node_id: int) -> Any:

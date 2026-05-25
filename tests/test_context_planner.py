@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from json import loads
 from pathlib import Path
 
 from codectx.context.anchors import AnchorResult, resolve_file_line_anchor
+from codectx.context.formatters import format_json
 from codectx.context.planner import build_explain_bundle
 from codectx.frontends.base import ChunkFact, EdgeFact, NodeFact, OccurrenceFact
 from codectx.graph.store import GraphStore
@@ -38,6 +40,11 @@ def test_build_explain_bundle_includes_target_enclosing_import_and_sibling(
         "sibling.definition",
     ]
     assert bundle.items[0].rank == 1
+    assert bundle.items[0].score_trace["target"] == 5.0
+    assert bundle.items[0].score_trace["exact_match"] == 3.0
+    assert loads(format_json(bundle))["items"][0]["score_trace"]["total"] == (
+        bundle.items[0].score
+    )
     assert bundle.items[0].file == "src/PaymentService.java"
     assert bundle.items[0].line_range == (4, 6)
     assert "authorize" in bundle.items[0].text

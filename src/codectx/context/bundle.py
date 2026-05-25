@@ -21,6 +21,7 @@ class ContextItem:
     confidence: float
     extractor: str | None
     metadata: dict[str, Any] = field(default_factory=dict)
+    score_trace: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
