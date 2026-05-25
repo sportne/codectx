@@ -1185,7 +1185,7 @@ Acceptance:
 
 ### T090 — Create Java golden fixture repository
 
-Status: todo
+Status: done
 
 Depends on: T080, T081, T082, T089
 

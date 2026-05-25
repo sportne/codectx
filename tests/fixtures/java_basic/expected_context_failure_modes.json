@@ -1,0 +1,23 @@
+{
+  "anchor": {
+    "file": "src/main/java/acme/PaymentService.java",
+    "node_name": "authorize",
+    "qualified_name": "acme.PaymentService.authorize(PaymentRequest)"
+  },
+  "goal": "failure-modes",
+  "items": [
+    {"edge_kind": null, "file": "src/main/java/acme/PaymentService.java", "kind": "target.definition", "line_range": [12, 15], "node_name": "authorize", "reason": "target definition"},
+    {"edge_kind": null, "file": "src/main/java/acme/PaymentService.java", "kind": "enclosing.type", "line_range": [5, 23], "node_name": "PaymentService", "reason": "enclosing type"},
+    {"edge_kind": null, "file": "src/main/java/acme/PaymentService.java", "kind": "import", "line_range": [3, 3], "node_name": null, "reason": "same-file import"},
+    {"edge_kind": "uses_type", "file": "src/main/java/acme/PaymentRequest.java", "kind": "neighborhood.type", "line_range": [3, 3], "node_name": "PaymentRequest", "reason": "referenced type"},
+    {"edge_kind": null, "file": "src/test/java/acme/PaymentServiceTest.java", "kind": "test.related", "line_range": [9, 12], "node_name": "authorize_fails_invalid_payment", "reason": "related test"},
+    {"edge_kind": "calls", "file": "src/main/java/acme/PaymentService.java", "kind": "neighborhood.callee", "line_range": [17, 22], "node_name": "validate", "reason": "direct callee"},
+    {"edge_kind": null, "file": "src/main/java/acme/PaymentService.java", "kind": "sibling.definition", "line_range": [6, 6], "node_name": "gateway", "reason": "same-file sibling"},
+    {"edge_kind": null, "file": "src/main/java/acme/PaymentService.java", "kind": "sibling.definition", "line_range": [8, 10], "node_name": "PaymentService", "reason": "same-file sibling"},
+    {"edge_kind": null, "file": "src/test/java/acme/PaymentServiceTest.java", "kind": "test.related", "line_range": [4, 7], "node_name": "authorize_allows_valid_payment", "reason": "related test"}
+  ],
+  "uncertainty_notes": [
+    "Symbol query matched 3 symbols; selected the top-ranked match.",
+    "Unresolved calls relationship from target: gateway.charge."
+  ]
+}
