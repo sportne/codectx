@@ -73,6 +73,7 @@ JavaTreeSitterFrontend  # Java frontend public API
 SourceSnippet  # source snippet public model
 apply_schema  # graph store schema lifecycle API
 build_parser  # CLI parser construction API
+build_explain_bundle  # context planner public API
 close  # graph store lifecycle API
 contains_line  # source span query API
 create_repo  # graph store repository persistence API

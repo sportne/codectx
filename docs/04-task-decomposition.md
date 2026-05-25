@@ -701,7 +701,7 @@ Acceptance:
 
 ### T051 — Generate required candidates for `explain`
 
-Status: todo
+Status: done
 
 Depends on: T042, T050
 
