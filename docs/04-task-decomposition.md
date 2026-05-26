@@ -1340,7 +1340,7 @@ Acceptance:
 
 ### T097 — MVP acceptance review
 
-Status: todo
+Status: done
 
 Depends on: T096
 
