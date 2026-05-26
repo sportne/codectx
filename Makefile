@@ -22,7 +22,7 @@ PEX_RESOLVE_FLAGS ?= \
 	format format-check \
 	lint typecheck dead-code reachability \
 	test architecture coverage coverage-report \
-	package artifact artifact-smoke clean ci
+	package artifact artifact-smoke release-ci clean ci
 
 help:
 	@echo "codectx Makefile targets:"
@@ -41,6 +41,7 @@ help:
 	@echo "  make package        - Build source and wheel distributions"
 	@echo "  make artifact       - Build one Linux/Windows runnable PEX artifact at $(ARTIFACT)"
 	@echo "  make artifact-smoke - Build and smoke-test the PEX artifact"
+	@echo "  make release-ci     - Run CI gates, build distributions, and smoke-test the PEX artifact"
 	@echo "  make clean          - Remove local build and test artifacts"
 	@echo "  make ci             - Run format-check, lint, reachability, architecture, and coverage gates"
 
@@ -93,6 +94,8 @@ artifact:
 artifact-smoke: artifact
 	"$(PYTHON)" "$(ARTIFACT)" --version
 	"$(PYTHON)" "$(ARTIFACT)" --help >/dev/null
+
+release-ci: ci package artifact-smoke
 
 clean:
 	rm -rf build dist .coverage .mypy_cache .pytest_cache .ruff_cache *.egg-info src/*.egg-info coverage.json htmlcov coverage.xml
