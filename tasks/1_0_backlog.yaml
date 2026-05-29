@@ -15,7 +15,7 @@ milestones:
     tasks:
       - id: V1-001
         title: Define 1.0 release criteria and stable contracts
-        status: todo
+        status: done
         priority: P0
         type: HITL
         blocked_by: []
