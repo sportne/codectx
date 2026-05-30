@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "description": "Optional real-repository context quality evaluation targets for pre-1.0 readiness.",
+  "targets": [
+    {
+      "id": "mundane-java-di",
+      "language": "java",
+      "path": "/mnt/d/projects/mundane-java-di",
+      "expected_status": "Java bundles were generally useful and stable in the MVP validation pass.",
+      "contexts": [
+        {
+          "id": "app-context-resolve-explain",
+          "symbol": "AppContext.resolve",
+          "goal": "explain",
+          "budget": 3500,
+          "expected_usefulness": "useful",
+          "quality_score": 4.4,
+          "notes": "Should include the target method, enclosing type, imports, and unresolved relationship notes."
+        },
+        {
+          "id": "source-generator-generate-explain",
+          "symbol": "InjectionModuleSourceGenerator.generate",
+          "goal": "explain",
+          "budget": 3500,
+          "expected_usefulness": "useful",
+          "quality_score": 4.7,
+          "notes": "Should include generator target/enclosing code, imports, referenced types, and related tests."
+        },
+        {
+          "id": "generator-cli-write-source-explain",
+          "symbol": "GeneratorCli.writeSource",
+          "goal": "explain",
+          "budget": 3500,
+          "expected_usefulness": "useful",
+          "quality_score": 4.2,
+          "notes": "Should include file-writing behavior and enclosing CLI error handling."
+        },
+        {
+          "id": "app-context-resolve-failure-modes",
+          "symbol": "AppContext.resolve",
+          "goal": "failure-modes",
+          "budget": 3500,
+          "expected_usefulness": "useful",
+          "quality_score": 4.3,
+          "notes": "Should prioritize thrown exceptions, sibling failure paths, imports, and related tests."
+        },
+        {
+          "id": "source-generator-quoted-failure-modes",
+          "symbol": "InjectionModuleSourceGenerator.quoted",
+          "goal": "failure-modes",
+          "budget": 3500,
+          "expected_usefulness": "moderately useful",
+          "quality_score": 3.7,
+          "notes": "Should include escaping logic and nearby generator helpers."
+        }
+      ]
+    },
+    {
+      "id": "cpp-helper-libs",
+      "language": "cpp",
+      "path": "/mnt/d/projects/cpp-helper-libs",
+      "expected_status": "C++ bundles were usable for target/enclosing context but showed heuristic limits in the MVP validation pass.",
+      "contexts": [
+        {
+          "id": "solve-dijkstra-explain",
+          "symbol": "solve_dijkstra",
+          "goal": "explain",
+          "budget": 3500,
+          "expected_usefulness": "partially useful",
+          "quality_score": 3.3,
+          "notes": "Should include target wrapper, namespace, includes, and unresolved callee notes."
+        },
+        {
+          "id": "matrix3-solve-explain",
+          "symbol": "Matrix3::solve",
+          "goal": "explain",
+          "budget": 3500,
+          "expected_usefulness": "partially useful",
+          "quality_score": 3.2,
+          "notes": "Should include large target/enclosing context while surfacing budget pressure."
+        },
+        {
+          "id": "solve-a-star-failure-modes",
+          "symbol": "solve_a_star",
+          "goal": "failure-modes",
+          "budget": 3500,
+          "expected_usefulness": "weak",
+          "quality_score": 2.1,
+          "notes": "Known weak case where vendored parser diagnostics may dominate optional context."
+        }
+      ]
+    }
+  ]
+}
