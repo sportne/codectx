@@ -192,6 +192,13 @@ The default target platforms can be overridden when building:
 make artifact ARTIFACT_PLATFORMS="--platform manylinux2014_x86_64-cp-312-cp312"
 ```
 
+## Runtime Compatibility
+
+`codectx` supports Python 3.11 and 3.12 for 1.0 readiness. Runtime dependency
+ranges for `pathspec`, `tree-sitter`, `tree-sitter-java`, and
+`tree-sitter-cpp` are bounded in `pyproject.toml` and documented in
+[`docs/dependency-compatibility.md`](docs/dependency-compatibility.md).
+
 ## Development Status
 
 The MVP CLI is implemented for local Java and C++ indexing, graph inspection, search, neighborhoods, and context bundle generation. See [`docs/validation-notes.md`](docs/validation-notes.md) for the latest local validation pass.

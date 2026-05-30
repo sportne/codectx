@@ -104,7 +104,7 @@ milestones:
 
       - id: V1-006
         title: Pin and verify runtime dependency compatibility
-        status: todo
+        status: done
         priority: P1
         type: AFK
         blocked_by: [V1-001]
