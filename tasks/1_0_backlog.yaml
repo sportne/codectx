@@ -138,7 +138,7 @@ milestones:
 
       - id: V1-008
         title: Stabilize release automation and artifact publishing
-        status: todo
+        status: done
         priority: P1
         type: AFK
         blocked_by: [V1-001]

@@ -4,10 +4,11 @@ on:
   push:
     tags:
       - "v*"
+      - "release-smoke/v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to publish, for example v0.1.0"
+        description: "Release tag to publish, for example v0.1.0 or release-smoke/v0.1.0-smoke-YYYYMMDDHHMM"
         required: true
         type: string
 
@@ -35,49 +36,7 @@ jobs:
       - name: Validate release version
         run: |
           set -euo pipefail
-          case "$RELEASE_TAG" in
-            v[0-9]*.[0-9]*.[0-9]*) ;;
-            *)
-              echo "Release tag must look like vMAJOR.MINOR.PATCH: $RELEASE_TAG" >&2
-              exit 1
-              ;;
-          esac
-          release_version="${RELEASE_TAG#v}"
-          package_version="$(python - <<'PY'
-          import tomllib
-
-          with open("pyproject.toml", "rb") as handle:
-              print(tomllib.load(handle)["project"]["version"])
-          PY
-          )"
-          module_version="$(python - <<'PY'
-          import ast
-          from pathlib import Path
-
-          module = ast.parse(Path("src/codectx/__init__.py").read_text(encoding="utf-8"))
-          for node in module.body:
-              if (
-                  isinstance(node, ast.Assign)
-                  and len(node.targets) == 1
-                  and isinstance(node.targets[0], ast.Name)
-                  and node.targets[0].id == "__version__"
-                  and isinstance(node.value, ast.Constant)
-              ):
-                  print(node.value.value)
-                  break
-          else:
-              raise SystemExit("__version__ not found")
-          PY
-          )"
-          if [ "$package_version" != "$release_version" ]; then
-            echo "pyproject version $package_version does not match $RELEASE_TAG" >&2
-            exit 1
-          fi
-          if [ "$module_version" != "$release_version" ]; then
-            echo "module version $module_version does not match $RELEASE_TAG" >&2
-            exit 1
-          fi
-          echo "RELEASE_VERSION=$release_version" >> "$GITHUB_ENV"
+          python scripts/validate_release_tag.py "$RELEASE_TAG" --github-env "$GITHUB_ENV"
 
       - name: Create virtual environment
         run: make setup-venv VENV=.venv
@@ -88,7 +47,7 @@ jobs:
       - name: Run release CI
         run: |
           set -euo pipefail
-          artifact="dist/codectx-${RELEASE_VERSION}.pex"
+          artifact="dist/codectx-${ASSET_VERSION}.pex"
           if make -n release-ci VENV=.venv ARTIFACT="$artifact" >/dev/null 2>&1; then
             make release-ci VENV=.venv ARTIFACT="$artifact"
           else
@@ -100,11 +59,11 @@ jobs:
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: codectx-${{ env.RELEASE_VERSION }}-release-artifacts
+          name: codectx-${{ env.ASSET_VERSION }}-release-artifacts
           path: |
-            dist/codectx-${{ env.RELEASE_VERSION }}.pex
-            dist/codectx-${{ env.RELEASE_VERSION }}.tar.gz
-            dist/codectx-${{ env.RELEASE_VERSION }}-py3-none-any.whl
+            dist/codectx-${{ env.ASSET_VERSION }}.pex
+            dist/codectx-${{ env.PACKAGE_VERSION }}.tar.gz
+            dist/codectx-${{ env.PACKAGE_VERSION }}-py3-none-any.whl
           if-no-files-found: error
 
       - name: Publish GitHub release
@@ -112,11 +71,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          pex_asset="dist/codectx-${RELEASE_VERSION}.pex"
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "$pex_asset" --clobber
+          pex_asset="dist/codectx-${ASSET_VERSION}.pex"
+          sdist_asset="dist/codectx-${PACKAGE_VERSION}.tar.gz"
+          wheel_asset="dist/codectx-${PACKAGE_VERSION}-py3-none-any.whl"
+          edit_flags=(--title "$RELEASE_TITLE" --notes "$RELEASE_NOTES")
+          if [ "$RELEASE_PRERELEASE" = "true" ]; then
+            edit_flags+=(--prerelease --latest=false)
           else
-            gh release create "$RELEASE_TAG" "$pex_asset" \
-              --title "codectx ${RELEASE_VERSION}" \
-              --notes "Release ${RELEASE_VERSION}. The attached PEX is a local, runnable codectx artifact for supported Linux and Windows CPython targets."
+            edit_flags+=(--latest)
+          fi
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" "${edit_flags[@]}"
+            gh release upload "$RELEASE_TAG" "$pex_asset" "$sdist_asset" "$wheel_asset" --clobber
+          else
+            gh release create "$RELEASE_TAG" "$pex_asset" "$sdist_asset" "$wheel_asset" \
+              "${edit_flags[@]}"
           fi

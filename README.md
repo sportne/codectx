@@ -192,6 +192,9 @@ The default target platforms can be overridden when building:
 make artifact ARTIFACT_PLATFORMS="--platform manylinux2014_x86_64-cp-312-cp312"
 ```
 
+Tagged release publishing, release-smoke verification tags, and recovery steps
+are documented in [`docs/release-automation.md`](docs/release-automation.md).
+
 ## Runtime Compatibility
 
 `codectx` supports Python 3.11 and 3.12 for 1.0 readiness. Runtime dependency
