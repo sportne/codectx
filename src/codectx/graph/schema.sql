@@ -126,6 +126,16 @@ CREATE TABLE IF NOT EXISTS index_stat (
   UNIQUE(snapshot_id, key)
 );
 
+CREATE TABLE IF NOT EXISTS extraction_cache (
+  path TEXT NOT NULL,
+  language TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  cache_version INTEGER NOT NULL,
+  facts_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY(path, language, content_hash, cache_version)
+);
+
 CREATE INDEX IF NOT EXISTS idx_file_snapshot_path ON file(snapshot_id, path);
 CREATE INDEX IF NOT EXISTS idx_file_language ON file(language);
 CREATE INDEX IF NOT EXISTS idx_node_snapshot_kind ON node(snapshot_id, kind);
@@ -140,3 +150,4 @@ CREATE INDEX IF NOT EXISTS idx_occurrence_text ON occurrence(text);
 CREATE INDEX IF NOT EXISTS idx_occurrence_file_range ON occurrence(file_id, start_byte, end_byte);
 CREATE INDEX IF NOT EXISTS idx_chunk_file_node ON chunk(file_id, node_id);
 CREATE INDEX IF NOT EXISTS idx_diagnostic_file ON diagnostic(file_id);
+CREATE INDEX IF NOT EXISTS idx_extraction_cache_hash ON extraction_cache(content_hash, cache_version);

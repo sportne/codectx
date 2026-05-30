@@ -300,6 +300,74 @@ class GraphStore:
             )
         return _lastrowid(cursor)
 
+    def snapshot_content_fingerprint(self, snapshot_id: int) -> str | None:
+        """Return the stored content fingerprint for a snapshot."""
+        row = self.conn.execute(
+            "SELECT content_fingerprint FROM snapshot WHERE id = ?", (snapshot_id,)
+        ).fetchone()
+        if row is None or row["content_fingerprint"] is None:
+            return None
+        return str(row["content_fingerprint"])
+
+    def get_extraction_cache(
+        self,
+        *,
+        path: str,
+        language: str,
+        content_hash: str,
+        cache_version: int,
+    ) -> dict[str, Any] | None:
+        """Read cached raw extraction facts for one source file."""
+        row = self.conn.execute(
+            """
+            SELECT facts_json
+            FROM extraction_cache
+            WHERE path = ?
+              AND language = ?
+              AND content_hash = ?
+              AND cache_version = ?
+            """,
+            (path, language, content_hash, cache_version),
+        ).fetchone()
+        if row is None:
+            return None
+        try:
+            decoded = json.loads(str(row["facts_json"]))
+        except (json.JSONDecodeError, TypeError):
+            return None
+        return decoded if isinstance(decoded, dict) else None
+
+    def upsert_extraction_cache(
+        self,
+        *,
+        path: str,
+        language: str,
+        content_hash: str,
+        cache_version: int,
+        facts: dict[str, Any],
+    ) -> None:
+        """Persist cached raw extraction facts for one source file."""
+        with self.conn:
+            self.conn.execute(
+                """
+                INSERT INTO extraction_cache(
+                  path, language, content_hash, cache_version, facts_json
+                )
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(path, language, content_hash, cache_version)
+                DO UPDATE SET
+                  facts_json = excluded.facts_json,
+                  updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    path,
+                    language,
+                    content_hash,
+                    cache_version,
+                    json.dumps(facts, sort_keys=True),
+                ),
+            )
+
     def insert_files(
         self, snapshot_id: int, files: Iterable[_FileRecordLike]
     ) -> dict[str, int]:

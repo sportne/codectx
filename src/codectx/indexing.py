@@ -6,11 +6,13 @@ import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
 
 from codectx.frontends.base import (
     ChunkFact,
     DiagnosticFact,
     EdgeFact,
+    ExtractedFacts,
     LanguageFrontend,
     NodeFact,
     OccurrenceFact,
@@ -21,6 +23,9 @@ from codectx.graph.store import GraphStore
 from codectx.scanner.models import FileRecord
 from codectx.scanner.repo import ScanOptions, scan_repository
 from codectx.source.decoding import SourceValidation, validate_source_bytes
+from codectx.source.spans import SourceSpan
+
+EXTRACTION_CACHE_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -50,6 +55,19 @@ class IndexingError:
     """Actionable indexing error suitable for CLI display."""
 
     message: str
+
+
+@dataclass(frozen=True)
+class ExtractGraphResult:
+    """Raw extraction facts plus cache observability."""
+
+    nodes: list[NodeFact]
+    edges: list[EdgeFact]
+    occurrences: list[OccurrenceFact]
+    chunks: list[ChunkFact]
+    diagnostics: list[DiagnosticFact]
+    cache_hits: int
+    cache_misses: int
 
 
 FrontendRegistry = Mapping[str, LanguageFrontend]
@@ -91,22 +109,47 @@ def run_index(
     fingerprint = content_fingerprint(records)
     with GraphStore(resolved_db_path) as store:
         store.apply_schema()
+        latest_snapshot_id = None if rebuild else store.latest_snapshot_id(repo_path)
+        if latest_snapshot_id is not None:
+            latest_stats = store.get_index_stats(latest_snapshot_id)
+            if store.snapshot_content_fingerprint(
+                latest_snapshot_id
+            ) == fingerprint and latest_stats.get("index.cache_version") == str(
+                EXTRACTION_CACHE_VERSION
+            ):
+                return IndexResult(
+                    repo=repo_path,
+                    db_path=resolved_db_path,
+                    snapshot_id=latest_snapshot_id,
+                    stats={
+                        **latest_stats,
+                        "index.mode": "unchanged",
+                        "index.cache_hits": str(len(records)),
+                        "index.cache_misses": "0",
+                        "index.cache_version": str(EXTRACTION_CACHE_VERSION),
+                    },
+                )
+
         repo_id = store.create_repo(repo_path)
         snapshot_id = store.create_snapshot(repo_id, content_fingerprint=fingerprint)
         file_ids = store.insert_files(snapshot_id, records)
-        nodes, edges, occurrences, chunks, diagnostics = extract_graph_facts(
-            repo_path, records, frontend_registry
+        facts = extract_graph_facts(repo_path, records, frontend_registry, store=store)
+        edges, occurrences = resolve_unique_references(
+            facts.nodes, facts.edges, facts.occurrences
         )
-        edges, occurrences = resolve_unique_references(nodes, edges, occurrences)
-        node_ids = store.insert_nodes(snapshot_id, nodes, file_ids)
+        node_ids = store.insert_nodes(snapshot_id, facts.nodes, file_ids)
         store.insert_edges(snapshot_id, edges, file_ids, node_ids)
         store.insert_occurrences(occurrences, file_ids, node_ids)
-        store.insert_chunks(chunks, file_ids, node_ids)
-        store.insert_diagnostics(snapshot_id, diagnostics, file_ids)
+        store.insert_chunks(facts.chunks, file_ids, node_ids)
+        store.insert_diagnostics(snapshot_id, facts.diagnostics, file_ids)
         stats = store.build_index_stats(snapshot_id)
         stats["feature.fts5"] = (
             "enabled" if store.configure_fts(snapshot_id) else "disabled"
         )
+        stats["index.cache_hits"] = str(facts.cache_hits)
+        stats["index.cache_misses"] = str(facts.cache_misses)
+        stats["index.cache_version"] = str(EXTRACTION_CACHE_VERSION)
+        stats["index.mode"] = "full" if facts.cache_hits == 0 else "incremental"
         store.upsert_index_stats(snapshot_id, stats)
 
     return IndexResult(
@@ -182,37 +225,72 @@ def extract_graph_facts(
     repo: Path,
     records: list[FileRecord],
     frontends: FrontendRegistry,
-) -> tuple[
-    list[NodeFact],
-    list[EdgeFact],
-    list[OccurrenceFact],
-    list[ChunkFact],
-    list[DiagnosticFact],
-]:
-    """Extract graph facts for scanned records with registered frontends."""
+    *,
+    store: GraphStore | None = None,
+) -> ExtractGraphResult:
+    """Extract graph facts, optionally using the per-file extraction cache."""
     nodes: list[NodeFact] = []
     edges: list[EdgeFact] = []
     occurrences: list[OccurrenceFact] = []
     chunks: list[ChunkFact] = []
     diagnostics: list[DiagnosticFact] = []
+    cache_hits = 0
+    cache_misses = 0
     for record in records:
         if record.language is None:
             continue
         frontend = frontends.get(record.language)
         if frontend is None:
             continue
-        source = (repo / record.path).read_bytes()
-        validation = validate_source_bytes(record.path, source)
-        if not validation.ok:
-            diagnostics.extend(_source_validation_diagnostics(record.path, validation))
-            continue
-        facts = frontend.extract(record.path, source)
+        cached = (
+            store.get_extraction_cache(
+                path=record.path,
+                language=record.language,
+                content_hash=record.content_hash,
+                cache_version=EXTRACTION_CACHE_VERSION,
+            )
+            if store is not None
+            else None
+        )
+        if cached is not None and (facts := _safe_facts_from_cache(cached)) is not None:
+            cache_hits += 1
+        else:
+            facts = _extract_file_facts(repo, record, frontend)
+            cache_misses += 1
+            if store is not None:
+                store.upsert_extraction_cache(
+                    path=record.path,
+                    language=record.language,
+                    content_hash=record.content_hash,
+                    cache_version=EXTRACTION_CACHE_VERSION,
+                    facts=_facts_to_cache(facts),
+                )
         nodes.extend(facts.nodes)
         edges.extend(facts.edges)
         occurrences.extend(facts.occurrences)
         chunks.extend(facts.chunks)
         diagnostics.extend(facts.diagnostics)
-    return nodes, edges, occurrences, chunks, diagnostics
+    return ExtractGraphResult(
+        nodes=nodes,
+        edges=edges,
+        occurrences=occurrences,
+        chunks=chunks,
+        diagnostics=diagnostics,
+        cache_hits=cache_hits,
+        cache_misses=cache_misses,
+    )
+
+
+def _extract_file_facts(
+    repo: Path, record: FileRecord, frontend: LanguageFrontend
+) -> ExtractedFacts:
+    source = (repo / record.path).read_bytes()
+    validation = validate_source_bytes(record.path, source)
+    if not validation.ok:
+        return ExtractedFacts(
+            diagnostics=_source_validation_diagnostics(record.path, validation)
+        )
+    return frontend.extract(record.path, source)
 
 
 def _source_validation_diagnostics(
@@ -236,6 +314,229 @@ def _source_validation_diagnostics(
         )
         for issue in validation.issues
     ]
+
+
+def _facts_to_cache(facts: ExtractedFacts) -> dict[str, Any]:
+    return {
+        "nodes": [_node_to_dict(node) for node in facts.nodes],
+        "edges": [_edge_to_dict(edge) for edge in facts.edges],
+        "occurrences": [
+            _occurrence_to_dict(occurrence) for occurrence in facts.occurrences
+        ],
+        "chunks": [_chunk_to_dict(chunk) for chunk in facts.chunks],
+        "diagnostics": [
+            _diagnostic_to_dict(diagnostic) for diagnostic in facts.diagnostics
+        ],
+    }
+
+
+def _facts_from_cache(value: dict[str, Any]) -> ExtractedFacts:
+    return ExtractedFacts(
+        nodes=[_node_from_dict(item) for item in _list(value, "nodes")],
+        edges=[_edge_from_dict(item) for item in _list(value, "edges")],
+        occurrences=[
+            _occurrence_from_dict(item) for item in _list(value, "occurrences")
+        ],
+        chunks=[_chunk_from_dict(item) for item in _list(value, "chunks")],
+        diagnostics=[
+            _diagnostic_from_dict(item) for item in _list(value, "diagnostics")
+        ],
+    )
+
+
+def _safe_facts_from_cache(value: dict[str, Any]) -> ExtractedFacts | None:
+    try:
+        return _facts_from_cache(value)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _node_to_dict(node: NodeFact) -> dict[str, Any]:
+    return {
+        "kind": node.kind,
+        "language": node.language,
+        "name": node.name,
+        "qualified_name": node.qualified_name,
+        "symbol_key": node.symbol_key,
+        "file_path": node.file_path,
+        "span": _span_to_dict(node.span),
+        "confidence": node.confidence,
+        "extractor": node.extractor,
+        "metadata": node.metadata,
+    }
+
+
+def _node_from_dict(value: dict[str, Any]) -> NodeFact:
+    return NodeFact(
+        kind=str(value["kind"]),
+        language=_optional_str(value.get("language")),
+        name=_optional_str(value.get("name")),
+        qualified_name=_optional_str(value.get("qualified_name")),
+        symbol_key=_optional_str(value.get("symbol_key")),
+        file_path=_optional_str(value.get("file_path")),
+        span=_span_from_dict(value.get("span")),
+        confidence=float(value["confidence"]),
+        extractor=str(value["extractor"]),
+        metadata=_dict(value.get("metadata")),
+    )
+
+
+def _edge_to_dict(edge: EdgeFact) -> dict[str, Any]:
+    return {
+        "kind": edge.kind,
+        "src_key": edge.src_key,
+        "dst_key": edge.dst_key,
+        "unresolved_src": edge.unresolved_src,
+        "unresolved_dst": edge.unresolved_dst,
+        "file_path": edge.file_path,
+        "span": _span_to_dict(edge.span),
+        "confidence": edge.confidence,
+        "extractor": edge.extractor,
+        "weight": edge.weight,
+        "metadata": edge.metadata,
+    }
+
+
+def _edge_from_dict(value: dict[str, Any]) -> EdgeFact:
+    return EdgeFact(
+        kind=str(value["kind"]),
+        src_key=_optional_str(value.get("src_key")),
+        dst_key=_optional_str(value.get("dst_key")),
+        unresolved_src=_optional_str(value.get("unresolved_src")),
+        unresolved_dst=_optional_str(value.get("unresolved_dst")),
+        file_path=_optional_str(value.get("file_path")),
+        span=_span_from_dict(value.get("span")),
+        confidence=float(value["confidence"]),
+        extractor=str(value["extractor"]),
+        weight=float(value.get("weight", 1.0)),
+        metadata=_dict(value.get("metadata")),
+    )
+
+
+def _occurrence_to_dict(occurrence: OccurrenceFact) -> dict[str, Any]:
+    return {
+        "file_path": occurrence.file_path,
+        "role": occurrence.role,
+        "text": occurrence.text,
+        "span": _span_to_dict(occurrence.span),
+        "node_key": occurrence.node_key,
+        "resolved_key": occurrence.resolved_key,
+        "confidence": occurrence.confidence,
+        "extractor": occurrence.extractor,
+        "metadata": occurrence.metadata,
+    }
+
+
+def _occurrence_from_dict(value: dict[str, Any]) -> OccurrenceFact:
+    span = _span_from_dict(value.get("span"))
+    if span is None:
+        raise ValueError("cached occurrence is missing span")
+    return OccurrenceFact(
+        file_path=str(value["file_path"]),
+        role=str(value["role"]),
+        text=str(value["text"]),
+        span=span,
+        node_key=_optional_str(value.get("node_key")),
+        resolved_key=_optional_str(value.get("resolved_key")),
+        confidence=float(value["confidence"]),
+        extractor=str(value["extractor"]),
+        metadata=_dict(value.get("metadata")),
+    )
+
+
+def _chunk_to_dict(chunk: ChunkFact) -> dict[str, Any]:
+    return {
+        "file_path": chunk.file_path,
+        "node_key": chunk.node_key,
+        "kind": chunk.kind,
+        "start_line": chunk.start_line,
+        "end_line": chunk.end_line,
+        "text": chunk.text,
+        "token_estimate": chunk.token_estimate,
+        "metadata": chunk.metadata,
+    }
+
+
+def _chunk_from_dict(value: dict[str, Any]) -> ChunkFact:
+    return ChunkFact(
+        file_path=str(value["file_path"]),
+        node_key=_optional_str(value.get("node_key")),
+        kind=str(value["kind"]),
+        start_line=int(value["start_line"]),
+        end_line=int(value["end_line"]),
+        text=str(value["text"]),
+        token_estimate=int(value["token_estimate"]),
+        metadata=_dict(value.get("metadata")),
+    )
+
+
+def _diagnostic_to_dict(diagnostic: DiagnosticFact) -> dict[str, Any]:
+    return {
+        "file_path": diagnostic.file_path,
+        "severity": diagnostic.severity,
+        "message": diagnostic.message,
+        "extractor": diagnostic.extractor,
+        "span": _span_to_dict(diagnostic.span),
+        "code": diagnostic.code,
+        "metadata": diagnostic.metadata,
+    }
+
+
+def _diagnostic_from_dict(value: dict[str, Any]) -> DiagnosticFact:
+    return DiagnosticFact(
+        file_path=_optional_str(value.get("file_path")),
+        severity=str(value["severity"]),
+        message=str(value["message"]),
+        extractor=str(value["extractor"]),
+        span=_span_from_dict(value.get("span")),
+        code=_optional_str(value.get("code")),
+        metadata=_dict(value.get("metadata")),
+    )
+
+
+def _span_to_dict(span: SourceSpan | None) -> dict[str, Any] | None:
+    if span is None:
+        return None
+    return {
+        "file_path": span.file_path,
+        "start_byte": span.start_byte,
+        "end_byte": span.end_byte,
+        "start_line": span.start_line,
+        "start_col": span.start_col,
+        "end_line": span.end_line,
+        "end_col": span.end_col,
+    }
+
+
+def _span_from_dict(value: object) -> SourceSpan | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("cached span must be an object")
+    return SourceSpan(
+        file_path=str(value["file_path"]),
+        start_byte=int(value["start_byte"]),
+        end_byte=int(value["end_byte"]),
+        start_line=int(value["start_line"]),
+        start_col=int(value["start_col"]),
+        end_line=int(value["end_line"]),
+        end_col=int(value["end_col"]),
+    )
+
+
+def _list(value: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    found = value.get(key, [])
+    if not isinstance(found, list) or not all(isinstance(item, dict) for item in found):
+        raise ValueError(f"cached {key} must be a list of objects")
+    return found
+
+
+def _dict(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _optional_str(value: object) -> str | None:
+    return value if isinstance(value, str) else None
 
 
 def resolve_unique_references(

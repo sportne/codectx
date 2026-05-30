@@ -24,13 +24,20 @@ Pass `--output-dir PATH` to choose a location. Each run writes:
 The manifest at `scripts/real_repo_perf_targets.json` records representative
 Java and C++ scenarios, scan filters, and conservative thresholds for:
 
-- Index time.
+- Full rebuild index time.
+- No-change index time against the same database.
+- One-file-change index time against a temporary copied repository.
 - Integrity check time.
 - Symbol search time.
 - Combined search time.
 - Context generation time.
 - SQLite database size relative to indexed supported source bytes after the
   target's scan filters are applied.
+
+The harness copies each configured repository into the output directory before
+indexing so one-file-change measurements never modify the source validation
+repositories. Missing repositories are reported as skipped per target; available
+targets still run.
 
 Threshold failures are reported in normal mode but do not fail the process. To
 turn the harness into a gate, pass `--enforce` or set

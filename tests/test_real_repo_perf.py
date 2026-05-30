@@ -12,9 +12,14 @@ def test_load_manifest_reads_default_targets() -> None:
 
     targets = module.load_manifest()
 
-    assert [target.id for target in targets] == ["mundane-java-di", "cpp-helper-libs"]
+    assert [target.id for target in targets] == [
+        "mundane-java-di",
+        "cpp-helper-libs",
+        "commons-math",
+    ]
     assert targets[0].thresholds["index_seconds"] == 30
     assert targets[1].exclude_patterns == ("third_party/**",)
+    assert targets[2].thresholds["changed_index_seconds"] == 80
 
 
 def test_load_manifest_rejects_invalid_threshold(tmp_path: Path) -> None:
@@ -92,7 +97,10 @@ def test_main_skips_when_enabled_repos_are_missing(
     result = module.main(["--manifest", str(manifest), "--output-dir", str(tmp_path)])
 
     assert result == 0
-    assert "required real repositories are missing" in capsys.readouterr().out
+    assert "wrote real-repo performance results" in capsys.readouterr().out
+    summary = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
+    assert summary[0]["status"] == "skipped"
+    assert summary[0]["message"] == "required real repository is missing"
 
 
 def test_threshold_failures_reports_only_exceeded_metrics() -> None:
@@ -207,6 +215,8 @@ def _manifest_target(
 def _thresholds() -> dict[str, float]:
     return {
         "index_seconds": 10,
+        "unchanged_index_seconds": 10,
+        "changed_index_seconds": 10,
         "integrity_seconds": 10,
         "symbol_query_seconds": 10,
         "search_seconds": 10,

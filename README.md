@@ -205,6 +205,7 @@ Supporting 1.0 readiness docs:
 - [`docs/real-repo-evaluation.md`](docs/real-repo-evaluation.md)
 - [`docs/real-repo-performance.md`](docs/real-repo-performance.md)
 - [`docs/release-automation.md`](docs/release-automation.md)
+- [`docs/07-incremental-indexing-decision.md`](docs/07-incremental-indexing-decision.md)
 
 ## Single-file artifact
 

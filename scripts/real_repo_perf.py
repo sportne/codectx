@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import tempfile
 import time
 from collections.abc import Callable
@@ -23,6 +24,8 @@ DEFAULT_MANIFEST = Path(__file__).with_name("real_repo_perf_targets.json")
 REQUIRED_THRESHOLDS = frozenset(
     {
         "index_seconds",
+        "unchanged_index_seconds",
+        "changed_index_seconds",
         "integrity_seconds",
         "symbol_query_seconds",
         "search_seconds",
@@ -81,19 +84,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"skipped: set {ENABLE_ENV}=1 to run real-repo performance gates")
         return 0
 
-    targets = load_manifest(args.manifest)
-    missing = [target for target in targets if not target.path.is_dir()]
-    if missing:
-        paths = ", ".join(f"{target.id}={target.path}" for target in missing)
-        print(f"skipped: required real repositories are missing: {paths}")
-        return 0
-
     output_dir = (
         args.output_dir.resolve()
         if args.output_dir is not None
         else Path(tempfile.gettempdir()) / f"codectx-real-repo-perf-{_timestamp()}"
     )
     output_dir.mkdir(parents=True, exist_ok=True)
+    targets = load_manifest(args.manifest)
     summary = _run(targets, output_dir)
     _write_summary(output_dir / "summary.md", summary)
     _write_summary_json(output_dir / "summary.json", summary)
@@ -110,11 +107,23 @@ def main(argv: list[str] | None = None) -> int:
 def _run(targets: tuple[PerfTarget, ...], output_dir: Path) -> list[dict[str, Any]]:
     summary: list[dict[str, Any]] = []
     for target in targets:
+        if not target.path.is_dir():
+            summary.append(
+                {
+                    "id": target.id,
+                    "path": str(target.path),
+                    "status": "skipped",
+                    "message": "required real repository is missing",
+                }
+            )
+            continue
+        working_repo = _copy_target_repo(target, output_dir)
         db_path = output_dir / "db" / f"{target.id}.sqlite"
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        source_bytes = _indexed_source_size(target)
+        working_target = _target_with_path(target, working_repo)
+        source_bytes = _indexed_source_size(working_target)
 
-        current_target = target
+        current_target = working_target
         current_db_path = db_path
         index_result, index_seconds = _timed(
             lambda current_target=current_target, current_db_path=current_db_path: (
@@ -133,12 +142,37 @@ def _run(targets: tuple[PerfTarget, ...], output_dir: Path) -> list[dict[str, An
             summary.append(
                 {
                     "id": target.id,
-                    "path": str(target.path),
+                    "path": str(working_target.path),
                     "status": "index_failed",
                     "message": index_result.message,
                 }
             )
             continue
+        unchanged_result, unchanged_seconds = _timed(
+            lambda current_target=current_target, current_db_path=current_db_path: (
+                run_index(
+                    current_target.path,
+                    db_path=current_db_path,
+                    include_patterns=current_target.include_patterns,
+                    exclude_patterns=current_target.exclude_patterns,
+                    force_include_patterns=current_target.force_include_patterns,
+                    use_ignore_files=current_target.use_ignore_files,
+                )
+            )
+        )
+        _touch_first_indexed_source(working_target)
+        changed_result, changed_seconds = _timed(
+            lambda current_target=current_target, current_db_path=current_db_path: (
+                run_index(
+                    current_target.path,
+                    db_path=current_db_path,
+                    include_patterns=current_target.include_patterns,
+                    exclude_patterns=current_target.exclude_patterns,
+                    force_include_patterns=current_target.force_include_patterns,
+                    use_ignore_files=current_target.use_ignore_files,
+                )
+            )
+        )
 
         health_result, integrity_seconds = _timed(
             lambda current_target=current_target, current_db_path=current_db_path: (
@@ -182,6 +216,8 @@ def _run(targets: tuple[PerfTarget, ...], output_dir: Path) -> list[dict[str, An
         db_bytes = db_path.stat().st_size
         metrics = {
             "index_seconds": round(index_seconds, 4),
+            "unchanged_index_seconds": round(unchanged_seconds, 4),
+            "changed_index_seconds": round(changed_seconds, 4),
             "integrity_seconds": round(integrity_seconds, 4),
             "symbol_query_seconds": round(symbol_seconds, 4),
             "search_seconds": round(search_seconds, 4),
@@ -195,6 +231,7 @@ def _run(targets: tuple[PerfTarget, ...], output_dir: Path) -> list[dict[str, An
                 "id": target.id,
                 "language": target.language,
                 "path": str(target.path),
+                "working_path": str(working_target.path),
                 "status": "ok",
                 "integrity": health_result.integrity
                 if isinstance(health_result, HealthResult)
@@ -204,6 +241,8 @@ def _run(targets: tuple[PerfTarget, ...], output_dir: Path) -> list[dict[str, An
                 "source_size_basis": "indexed_supported_sources",
                 "thresholds": target.thresholds,
                 "queries": {
+                    "unchanged_index": _result_status(unchanged_result, IndexResult),
+                    "changed_index": _result_status(changed_result, IndexResult),
                     "symbol_query": _result_status(symbol_result, SymbolSearchResult),
                     "search": _result_status(search_result, SearchResult),
                     "context": _result_status(context_result, ContextResult),
@@ -216,6 +255,8 @@ def _run(targets: tuple[PerfTarget, ...], output_dir: Path) -> list[dict[str, An
 def _threshold_failures(summary: list[dict[str, Any]]) -> list[str]:
     failures: list[str] = []
     for target in summary:
+        if target.get("status") == "skipped":
+            continue
         if target.get("status") != "ok":
             failures.append(
                 f"{target.get('id', '<unknown>')}: status={target.get('status')}"
@@ -312,6 +353,24 @@ def _target(value: object) -> PerfTarget:
     )
 
 
+def _target_with_path(target: PerfTarget, path: Path) -> PerfTarget:
+    return PerfTarget(
+        id=target.id,
+        language=target.language,
+        path=path,
+        symbol_query=target.symbol_query,
+        search_query=target.search_query,
+        context_symbol=target.context_symbol,
+        context_goal=target.context_goal,
+        context_budget=target.context_budget,
+        thresholds=target.thresholds,
+        include_patterns=target.include_patterns,
+        exclude_patterns=target.exclude_patterns,
+        force_include_patterns=target.force_include_patterns,
+        use_ignore_files=target.use_ignore_files,
+    )
+
+
 def _timed(operation: Callable[[], T]) -> tuple[T, float]:
     started = time.perf_counter()
     result = operation()
@@ -327,6 +386,32 @@ def _indexed_source_size(target: PerfTarget) -> int:
         record.size_bytes
         for record in scan_repository(target.path, options=_scan_options(target))
     )
+
+
+def _copy_target_repo(target: PerfTarget, output_dir: Path) -> Path:
+    destination = output_dir / "repos" / target.id
+    if destination.exists():
+        shutil.rmtree(destination)
+    shutil.copytree(
+        target.path,
+        destination,
+        ignore=shutil.ignore_patterns(".git", ".codectx", "__pycache__"),
+    )
+    return destination
+
+
+def _touch_first_indexed_source(target: PerfTarget) -> None:
+    records = scan_repository(target.path, options=_scan_options(target))
+    if not records:
+        return
+    path = target.path / records[0].path
+    suffix = (
+        "\n// codectx incremental performance change\n"
+        if records[0].language in {"java", "cpp"}
+        else "\n"
+    )
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(suffix)
 
 
 def _scan_options(target: PerfTarget) -> ScanOptions:

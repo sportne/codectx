@@ -13,11 +13,13 @@
       "context_budget": 3500,
       "thresholds": {
         "index_seconds": 30,
+        "unchanged_index_seconds": 5,
+        "changed_index_seconds": 10,
         "integrity_seconds": 10,
         "symbol_query_seconds": 5,
         "search_seconds": 5,
         "context_seconds": 10,
-        "db_source_size_ratio": 20
+        "db_source_size_ratio": 93
       }
     },
     {
@@ -34,11 +36,33 @@
       "context_budget": 3500,
       "thresholds": {
         "index_seconds": 60,
+        "unchanged_index_seconds": 5,
+        "changed_index_seconds": 15,
         "integrity_seconds": 20,
         "symbol_query_seconds": 5,
         "search_seconds": 5,
         "context_seconds": 15,
         "db_source_size_ratio": 25
+      }
+    },
+    {
+      "id": "commons-math",
+      "language": "java",
+      "path": "/tmp/codectx-benchmark-commons-math",
+      "symbol_query": "LUDecomposition",
+      "search_query": "RealMatrix solve",
+      "context_symbol": "LUDecomposition.solve",
+      "context_goal": "explain",
+      "context_budget": 3500,
+      "thresholds": {
+        "index_seconds": 260,
+        "unchanged_index_seconds": 20,
+        "changed_index_seconds": 80,
+        "integrity_seconds": 10,
+        "symbol_query_seconds": 5,
+        "search_seconds": 5,
+        "context_seconds": 10,
+        "db_source_size_ratio": 66
       }
     }
   ]

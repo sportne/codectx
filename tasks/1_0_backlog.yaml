@@ -209,7 +209,7 @@ milestones:
 
       - id: V1-012
         title: Decide whether incremental indexing belongs before 1.0
-        status: todo
+        status: done
         priority: P3
         type: HITL
         blocked_by: [V1-007]

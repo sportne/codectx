@@ -2,12 +2,22 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from codectx.frontends.base import EdgeFact, ExtractedFacts, NodeFact, OccurrenceFact
+from codectx.frontends.base import (
+    ChunkFact,
+    DiagnosticFact,
+    EdgeFact,
+    ExtractedFacts,
+    NodeFact,
+    OccurrenceFact,
+)
 from codectx.graph.store import GraphStore
 from codectx.indexing import (
+    EXTRACTION_CACHE_VERSION,
     HealthResult,
     IndexingError,
     IndexResult,
+    _facts_from_cache,
+    _facts_to_cache,
     default_db_path,
     default_frontends,
     read_health,
@@ -15,6 +25,7 @@ from codectx.indexing import (
     resolve_unique_references,
     run_index,
 )
+from codectx.scanner.hashing import file_sha256
 from codectx.source.spans import SourceSpan
 
 
@@ -146,6 +157,305 @@ def test_run_index_persists_java_and_cpp_graph_facts(tmp_path: Path) -> None:
             assert (
                 store.conn.execute("SELECT COUNT(*) FROM chunk_fts").fetchone()[0] > 0
             )
+
+
+def test_extraction_cache_round_trips_all_fact_types() -> None:
+    span = SourceSpan(
+        file_path="src/Foo.java",
+        start_byte=0,
+        end_byte=12,
+        start_line=1,
+        start_col=0,
+        end_line=1,
+        end_col=12,
+    )
+    facts = ExtractedFacts(
+        nodes=[
+            NodeFact(
+                kind="type",
+                language="java",
+                name="Foo",
+                qualified_name="acme.Foo",
+                symbol_key="java:src/Foo.java#Foo",
+                file_path="src/Foo.java",
+                span=span,
+                confidence=0.9,
+                extractor="test",
+                metadata={"node": True},
+            )
+        ],
+        edges=[
+            EdgeFact(
+                kind="uses_type",
+                src_key="java:src/Foo.java#Foo",
+                dst_key=None,
+                unresolved_src=None,
+                unresolved_dst="Bar",
+                file_path="src/Foo.java",
+                span=span,
+                confidence=0.8,
+                extractor="test",
+                weight=2.0,
+                metadata={"edge": True},
+            )
+        ],
+        occurrences=[
+            OccurrenceFact(
+                file_path="src/Foo.java",
+                role="type_reference",
+                text="Bar",
+                span=span,
+                node_key="java:src/Foo.java#Foo",
+                resolved_key=None,
+                confidence=0.7,
+                extractor="test",
+                metadata={"occurrence": True},
+            )
+        ],
+        chunks=[
+            ChunkFact(
+                file_path="src/Foo.java",
+                node_key="java:src/Foo.java#Foo",
+                kind="definition",
+                start_line=1,
+                end_line=1,
+                text="class Foo {}",
+                token_estimate=3,
+                metadata={"chunk": True},
+            )
+        ],
+        diagnostics=[
+            DiagnosticFact(
+                file_path="src/Foo.java",
+                severity="warning",
+                message="synthetic",
+                extractor="test",
+                span=span,
+                code="synthetic",
+                metadata={"diagnostic": True},
+            )
+        ],
+    )
+
+    round_tripped = _facts_from_cache(_facts_to_cache(facts))
+
+    assert round_tripped == facts
+
+
+def test_run_index_reuses_existing_snapshot_when_content_is_unchanged(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    _write(repo / "src" / "Foo.java", "class Foo {}\n")
+    db_path = tmp_path / "graph.sqlite"
+    first_frontend = CountingFrontend()
+
+    first = run_index(repo, db_path=db_path, frontends={"java": first_frontend})
+    second = run_index(repo, db_path=db_path, frontends={"java": ExplodingFrontend()})
+
+    assert isinstance(first, IndexResult)
+    assert isinstance(second, IndexResult)
+    assert first.snapshot_id == second.snapshot_id
+    assert first_frontend.calls == ["src/Foo.java"]
+    assert second.stats["index.mode"] == "unchanged"
+    assert second.stats["index.cache_hits"] == "1"
+    assert second.stats["index.cache_misses"] == "0"
+
+
+def test_run_index_reextracts_only_changed_files(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    _write(repo / "src" / "Foo.java", "class Foo {}\n")
+    _write(repo / "src" / "Bar.java", "class Bar {}\n")
+    db_path = tmp_path / "graph.sqlite"
+
+    first = run_index(repo, db_path=db_path, frontends={"java": CountingFrontend()})
+    _write(repo / "src" / "Bar.java", "class Bar { int changed; }\n")
+    frontend = CountingFrontend()
+    second = run_index(repo, db_path=db_path, frontends={"java": frontend})
+
+    assert isinstance(first, IndexResult)
+    assert isinstance(second, IndexResult)
+    assert second.snapshot_id != first.snapshot_id
+    assert frontend.calls == ["src/Bar.java"]
+    assert second.stats["index.mode"] == "incremental"
+    assert second.stats["index.cache_hits"] == "1"
+    assert second.stats["index.cache_misses"] == "1"
+
+
+def test_run_index_recomputes_global_resolution_from_cached_facts(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    _write(repo / "src" / "User.java", "class User {}\n")
+    _write(repo / "src" / "Service.java", "class Service { User user; }\n")
+    db_path = tmp_path / "graph.sqlite"
+
+    run_index(repo, db_path=db_path, frontends={"java": ReferenceFrontend()})
+    _write(repo / "src" / "Service.java", "class Service { User changed; }\n")
+    second = run_index(repo, db_path=db_path, frontends={"java": ReferenceFrontend()})
+
+    assert isinstance(second, IndexResult)
+    assert second.stats["index.cache_hits"] == "1"
+    assert second.stats["index.cache_misses"] == "1"
+    with GraphStore(db_path) as store:
+        row = store.conn.execute(
+            """
+            SELECT dst.symbol_key AS dst_key, edge.unresolved_dst
+            FROM edge
+            LEFT JOIN node AS dst ON dst.id = edge.dst_node_id
+            WHERE edge.snapshot_id = ?
+              AND edge.kind = 'uses_type'
+            """,
+            (second.snapshot_id,),
+        ).fetchone()
+        assert row["dst_key"] == "java:src/User.java#User"
+        assert row["unresolved_dst"] is None
+
+
+def test_run_index_handles_added_and_removed_files_incrementally(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    original = repo / "src" / "Foo.java"
+    _write(original, "class Foo {}\n")
+    db_path = tmp_path / "graph.sqlite"
+
+    first = run_index(repo, db_path=db_path, frontends={"java": CountingFrontend()})
+    original.unlink()
+    _write(repo / "src" / "Bar.java", "class Bar {}\n")
+    second = run_index(repo, db_path=db_path, frontends={"java": CountingFrontend()})
+
+    assert isinstance(first, IndexResult)
+    assert isinstance(second, IndexResult)
+    assert second.snapshot_id != first.snapshot_id
+    assert second.stats["files"] == "1"
+    with GraphStore(db_path) as store:
+        rows = store.conn.execute(
+            "SELECT path FROM file WHERE snapshot_id = ?", (second.snapshot_id,)
+        ).fetchall()
+        assert [row["path"] for row in rows] == ["src/Bar.java"]
+
+
+def test_run_index_cache_misses_when_only_wrong_cache_version_exists(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    _write(repo / "src" / "Foo.java", "class Foo {}\n")
+    db_path = tmp_path / "graph.sqlite"
+    with GraphStore(db_path) as store:
+        store.apply_schema()
+        store.upsert_extraction_cache(
+            path="src/Foo.java",
+            language="java",
+            content_hash=file_sha256(repo / "src" / "Foo.java"),
+            cache_version=EXTRACTION_CACHE_VERSION - 1,
+            facts=_facts_to_cache(ExtractedFacts()),
+        )
+    frontend = CountingFrontend()
+
+    result = run_index(repo, db_path=db_path, frontends={"java": frontend})
+
+    assert isinstance(result, IndexResult)
+    assert frontend.calls == ["src/Foo.java"]
+    assert result.stats["index.cache_hits"] == "0"
+    assert result.stats["index.cache_misses"] == "1"
+
+
+def test_run_index_cache_misses_when_only_wrong_path_exists(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    _write(repo / "src" / "Foo.java", "class Foo {}\n")
+    db_path = tmp_path / "graph.sqlite"
+    with GraphStore(db_path) as store:
+        store.apply_schema()
+        store.upsert_extraction_cache(
+            path="src/Other.java",
+            language="java",
+            content_hash=file_sha256(repo / "src" / "Foo.java"),
+            cache_version=EXTRACTION_CACHE_VERSION,
+            facts=_facts_to_cache(ExtractedFacts()),
+        )
+    frontend = CountingFrontend()
+
+    result = run_index(repo, db_path=db_path, frontends={"java": frontend})
+
+    assert isinstance(result, IndexResult)
+    assert frontend.calls == ["src/Foo.java"]
+    assert result.stats["index.cache_hits"] == "0"
+    assert result.stats["index.cache_misses"] == "1"
+
+
+def test_run_index_cache_misses_when_only_wrong_language_exists(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    _write(repo / "src" / "Foo.java", "class Foo {}\n")
+    db_path = tmp_path / "graph.sqlite"
+    with GraphStore(db_path) as store:
+        store.apply_schema()
+        store.upsert_extraction_cache(
+            path="src/Foo.java",
+            language="cpp",
+            content_hash=file_sha256(repo / "src" / "Foo.java"),
+            cache_version=EXTRACTION_CACHE_VERSION,
+            facts=_facts_to_cache(ExtractedFacts()),
+        )
+    frontend = CountingFrontend()
+
+    result = run_index(repo, db_path=db_path, frontends={"java": frontend})
+
+    assert isinstance(result, IndexResult)
+    assert frontend.calls == ["src/Foo.java"]
+    assert result.stats["index.cache_hits"] == "0"
+    assert result.stats["index.cache_misses"] == "1"
+
+
+def test_run_index_treats_malformed_extraction_cache_as_miss(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    _write(repo / "src" / "Foo.java", "class Foo {}\n")
+    db_path = tmp_path / "graph.sqlite"
+    with GraphStore(db_path) as store:
+        store.apply_schema()
+        store.conn.execute(
+            """
+            INSERT INTO extraction_cache(
+              path, language, content_hash, cache_version, facts_json
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                "src/Foo.java",
+                "java",
+                file_sha256(repo / "src" / "Foo.java"),
+                EXTRACTION_CACHE_VERSION,
+                "{not-json",
+            ),
+        )
+    frontend = CountingFrontend()
+
+    result = run_index(repo, db_path=db_path, frontends={"java": frontend})
+
+    assert isinstance(result, IndexResult)
+    assert frontend.calls == ["src/Foo.java"]
+    assert result.stats["index.cache_hits"] == "0"
+    assert result.stats["index.cache_misses"] == "1"
+
+
+def test_run_index_rebuild_clears_extraction_cache(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    _write(repo / "src" / "Foo.java", "class Foo {}\n")
+    db_path = tmp_path / "graph.sqlite"
+
+    run_index(repo, db_path=db_path, frontends={"java": CountingFrontend()})
+    result = run_index(
+        repo,
+        db_path=db_path,
+        rebuild=True,
+        frontends={"java": CountingFrontend()},
+    )
+
+    assert isinstance(result, IndexResult)
+    assert result.stats["index.cache_hits"] == "0"
+    assert result.stats["index.cache_misses"] == "1"
 
 
 def test_run_index_persists_java_call_like_facts(tmp_path: Path) -> None:
@@ -614,3 +924,98 @@ class EmptyFrontend:
 
     def extract(self, file_path: str, source: bytes) -> ExtractedFacts:
         return ExtractedFacts()
+
+
+class CountingFrontend:
+    language = "java"
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def extract(self, file_path: str, source: bytes) -> ExtractedFacts:
+        self.calls.append(file_path)
+        name = Path(file_path).stem
+        span = SourceSpan(
+            file_path=file_path,
+            start_byte=0,
+            end_byte=len(source),
+            start_line=1,
+            start_col=0,
+            end_line=1,
+            end_col=len(source.rstrip(b"\n")),
+        )
+        symbol_key = f"java:{file_path}#{name}"
+        return ExtractedFacts(
+            nodes=[
+                NodeFact(
+                    kind="type",
+                    language="java",
+                    name=name,
+                    qualified_name=name,
+                    symbol_key=symbol_key,
+                    file_path=file_path,
+                    span=span,
+                    confidence=1.0,
+                    extractor="counting",
+                )
+            ],
+            occurrences=[
+                OccurrenceFact(
+                    file_path=file_path,
+                    role="definition",
+                    text=name,
+                    span=span,
+                    node_key=symbol_key,
+                    resolved_key=symbol_key,
+                    confidence=1.0,
+                    extractor="counting",
+                )
+            ],
+            chunks=[
+                ChunkFact(
+                    file_path=file_path,
+                    node_key=symbol_key,
+                    kind="definition",
+                    start_line=1,
+                    end_line=1,
+                    text=source.decode("utf-8"),
+                    token_estimate=4,
+                )
+            ],
+        )
+
+
+class ReferenceFrontend(CountingFrontend):
+    def extract(self, file_path: str, source: bytes) -> ExtractedFacts:
+        facts = super().extract(file_path, source)
+        if file_path.endswith("Service.java"):
+            span = SourceSpan(
+                file_path=file_path,
+                start_byte=0,
+                end_byte=len(source),
+                start_line=1,
+                start_col=0,
+                end_line=1,
+                end_col=len(source.rstrip(b"\n")),
+            )
+            facts.edges.append(
+                EdgeFact(
+                    kind="uses_type",
+                    src_key="java:src/Service.java#Service",
+                    dst_key=None,
+                    unresolved_src=None,
+                    unresolved_dst="User",
+                    file_path=file_path,
+                    span=span,
+                    confidence=1.0,
+                    extractor="reference",
+                )
+            )
+        return facts
+
+
+class ExplodingFrontend:
+    language = "java"
+
+    def extract(self, file_path: str, source: bytes) -> ExtractedFacts:
+        raise AssertionError(f"unexpected extraction for {file_path}")
