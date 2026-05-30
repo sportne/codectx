@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "description": "Optional real-repository performance and storage gate targets for pre-1.0 readiness.",
+  "targets": [
+    {
+      "id": "mundane-java-di",
+      "language": "java",
+      "path": "/mnt/d/projects/mundane-java-di",
+      "symbol_query": "AppContext.resolve",
+      "search_query": "resolve",
+      "context_symbol": "AppContext.resolve",
+      "context_goal": "explain",
+      "context_budget": 3500,
+      "thresholds": {
+        "index_seconds": 30,
+        "integrity_seconds": 10,
+        "symbol_query_seconds": 5,
+        "search_seconds": 5,
+        "context_seconds": 10,
+        "db_source_size_ratio": 20
+      }
+    },
+    {
+      "id": "cpp-helper-libs",
+      "language": "cpp",
+      "path": "/mnt/d/projects/cpp-helper-libs",
+      "exclude_patterns": [
+        "third_party/**"
+      ],
+      "symbol_query": "solve_dijkstra",
+      "search_query": "dijkstra",
+      "context_symbol": "solve_dijkstra",
+      "context_goal": "explain",
+      "context_budget": 3500,
+      "thresholds": {
+        "index_seconds": 60,
+        "integrity_seconds": 20,
+        "symbol_query_seconds": 5,
+        "search_seconds": 5,
+        "context_seconds": 15,
+        "db_source_size_ratio": 25
+      }
+    }
+  ]
+}
