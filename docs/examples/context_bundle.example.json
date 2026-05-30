@@ -1,53 +1,307 @@
 {
-  "query": {
-    "goal": "explain",
-    "budget_tokens": 8000,
-    "anchor_input": {
-      "symbol": "PaymentService.authorize"
-    }
-  },
   "anchor": {
-    "node_id": 123,
-    "kind": "callable",
-    "name": "authorize",
-    "qualified_name": "PaymentService.authorize",
+    "chunk_id": 7,
     "file": "src/main/java/acme/PaymentService.java",
-    "line_range": [
-      42,
-      118
-    ]
+    "line": 12,
+    "node_id": 7,
+    "node_kind": "callable",
+    "node_name": "authorize",
+    "qualified_name": "acme.PaymentService.authorize(PaymentRequest)",
+    "symbol_key": "java:src/main/java/acme/PaymentService.java#PaymentService.authorize(PaymentRequest)"
   },
   "index_health": {
-    "indexed_files": 142,
-    "parser_diagnostics": 2,
-    "unresolved_references": 317,
-    "extraction_mode": "tree-sitter-heuristic"
+    "chunks": "11",
+    "diagnostics": "0",
+    "edges": "27",
+    "feature.fts5": "enabled",
+    "files": "4",
+    "index.cache_hits": "0",
+    "index.cache_misses": "4",
+    "index.cache_version": "1",
+    "index.mode": "full",
+    "language.java": "4",
+    "nodes": "11",
+    "occurrences": "31",
+    "unresolved_references": "11"
   },
   "items": [
     {
-      "rank": 1,
-      "kind": "target_definition",
-      "node_id": 123,
+      "confidence": 1.0,
+      "extractor": "treesitter-java",
       "file": "src/main/java/acme/PaymentService.java",
+      "kind": "target.definition",
       "line_range": [
-        42,
-        118
+        12,
+        15
       ],
-      "score": 9.8,
-      "token_estimate": 740,
-      "confidence": 0.95,
-      "extractor": "tree-sitter-java",
-      "reason": "primary target definition",
-      "text": "// source snippet goes here"
+      "metadata": {
+        "chunk_id": 7,
+        "node_id": 7,
+        "node_kind": "callable",
+        "node_name": "authorize",
+        "qualified_name": "acme.PaymentService.authorize(PaymentRequest)",
+        "symbol_key": "java:src/main/java/acme/PaymentService.java#PaymentService.authorize(PaymentRequest)"
+      },
+      "rank": 1,
+      "reason": "target definition",
+      "score": 7.6768,
+      "score_trace": {
+        "confidence": 0.5,
+        "edge_relevance": 0.0,
+        "enclosing_context": 0.0,
+        "exact_match": 0.0,
+        "graph_proximity": 0.0,
+        "lexical_match": 1.0,
+        "redundancy": 0.0,
+        "source_proximity": 1.2,
+        "target": 5.0,
+        "test_context": 0.0,
+        "token_cost": -0.0232,
+        "total": 7.6768
+      },
+      "text": "public boolean authorize(PaymentRequest request) {\n    validate(request);\n    return gateway.charge(request);\n  }",
+      "token_estimate": 29
+    },
+    {
+      "confidence": 1.0,
+      "extractor": "treesitter-java",
+      "file": "src/main/java/acme/PaymentService.java",
+      "kind": "enclosing.type",
+      "line_range": [
+        5,
+        23
+      ],
+      "metadata": {
+        "chunk_id": 4,
+        "node_id": 4,
+        "node_kind": "type",
+        "node_name": "PaymentService",
+        "qualified_name": "acme.PaymentService",
+        "symbol_key": "java:src/main/java/acme/PaymentService.java#PaymentService"
+      },
+      "rank": 2,
+      "reason": "enclosing type",
+      "score": 2.4064,
+      "score_trace": {
+        "confidence": 0.5,
+        "edge_relevance": 0.0,
+        "enclosing_context": 0.8,
+        "exact_match": 0.0,
+        "graph_proximity": 0.0,
+        "lexical_match": 0.0,
+        "redundancy": 0.0,
+        "source_proximity": 1.2,
+        "target": 0.0,
+        "test_context": 0.0,
+        "token_cost": -0.0936,
+        "total": 2.4064
+      },
+      "text": "public class PaymentService {\n  private final PaymentGateway gateway;\n\n  public PaymentService(PaymentGateway gateway) {\n    this.gateway = gateway;\n  }\n\n  public boolean authorize(PaymentRequest request) {\n    validate(request);\n    return gateway.charge(request);\n  }\n\n  private void validate(PaymentRequest request) {\n    if (request == null) {\n      throw new IllegalArgumentException(\"request\");\n    }\n    Objects.requireNonNull(request.userId(), \"userId\");\n  }\n}",
+      "token_estimate": 117
+    },
+    {
+      "confidence": 0.8,
+      "extractor": "treesitter-java",
+      "file": "src/main/java/acme/PaymentService.java",
+      "kind": "import",
+      "line_range": [
+        3,
+        3
+      ],
+      "metadata": {
+        "occurrence_id": 6,
+        "static": false
+      },
+      "rank": 3,
+      "reason": "same-file import",
+      "score": 1.8544,
+      "score_trace": {
+        "confidence": 0.4,
+        "edge_relevance": 0.8,
+        "enclosing_context": 0.0,
+        "exact_match": 0.0,
+        "graph_proximity": 0.0,
+        "lexical_match": 0.0,
+        "redundancy": 0.0,
+        "source_proximity": 0.66,
+        "target": 0.0,
+        "test_context": 0.0,
+        "token_cost": -0.0056,
+        "total": 1.8544
+      },
+      "text": "import java.util.Objects;\n",
+      "token_estimate": 7
+    },
+    {
+      "confidence": 0.5,
+      "extractor": "treesitter-java",
+      "file": "src/main/java/acme/PaymentRequest.java",
+      "kind": "neighborhood.type",
+      "line_range": [
+        3,
+        3
+      ],
+      "metadata": {
+        "chunk_id": 3,
+        "edge_id": 13,
+        "edge_kind": "uses_type",
+        "node_id": 3,
+        "node_kind": "type",
+        "node_name": "PaymentRequest",
+        "qualified_name": "acme.PaymentRequest",
+        "reference_kind": "callable_signature",
+        "symbol_key": "java:src/main/java/acme/PaymentRequest.java#PaymentRequest"
+      },
+      "rank": 4,
+      "reason": "referenced type",
+      "score": 3.438,
+      "score_trace": {
+        "confidence": 0.25,
+        "edge_relevance": 1.7,
+        "enclosing_context": 0.0,
+        "exact_match": 0.0,
+        "graph_proximity": 1.5,
+        "lexical_match": 0.0,
+        "redundancy": 0.0,
+        "source_proximity": 0.0,
+        "target": 0.0,
+        "test_context": 0.0,
+        "token_cost": -0.012,
+        "total": 3.438
+      },
+      "text": "public record PaymentRequest(String userId, int amount) {}",
+      "token_estimate": 15
+    },
+    {
+      "confidence": 1.0,
+      "extractor": "treesitter-java",
+      "file": "src/test/java/acme/PaymentServiceTest.java",
+      "kind": "test.related",
+      "line_range": [
+        9,
+        12
+      ],
+      "metadata": {
+        "chunk_id": 11,
+        "node_id": 11,
+        "node_kind": "callable",
+        "node_name": "authorize_fails_invalid_payment",
+        "qualified_name": "acme.PaymentServiceTest.authorize_fails_invalid_payment()",
+        "symbol_key": "java:src/test/java/acme/PaymentServiceTest.java#PaymentServiceTest.authorize_fails_invalid_payment()"
+      },
+      "rank": 5,
+      "reason": "related test",
+      "score": 1.1712,
+      "score_trace": {
+        "confidence": 0.5,
+        "edge_relevance": 0.0,
+        "enclosing_context": 0.0,
+        "exact_match": 0.0,
+        "graph_proximity": 0.0,
+        "lexical_match": 0.0,
+        "redundancy": 0.0,
+        "source_proximity": 0.0,
+        "target": 0.0,
+        "test_context": 0.7,
+        "token_cost": -0.0288,
+        "total": 1.1712
+      },
+      "text": "void authorize_fails_invalid_payment() {\n    PaymentService service = new PaymentService(new PaymentGateway());\n    service.authorize(null);\n  }",
+      "token_estimate": 36
+    },
+    {
+      "confidence": 1.0,
+      "extractor": "treesitter-java",
+      "file": "src/test/java/acme/PaymentServiceTest.java",
+      "kind": "test.related",
+      "line_range": [
+        4,
+        7
+      ],
+      "metadata": {
+        "chunk_id": 10,
+        "node_id": 10,
+        "node_kind": "callable",
+        "node_name": "authorize_allows_valid_payment",
+        "qualified_name": "acme.PaymentServiceTest.authorize_allows_valid_payment()",
+        "symbol_key": "java:src/test/java/acme/PaymentServiceTest.java#PaymentServiceTest.authorize_allows_valid_payment()"
+      },
+      "rank": 6,
+      "reason": "related test",
+      "score": 1.1664,
+      "score_trace": {
+        "confidence": 0.5,
+        "edge_relevance": 0.0,
+        "enclosing_context": 0.0,
+        "exact_match": 0.0,
+        "graph_proximity": 0.0,
+        "lexical_match": 0.0,
+        "redundancy": 0.0,
+        "source_proximity": 0.0,
+        "target": 0.0,
+        "test_context": 0.7,
+        "token_cost": -0.0336,
+        "total": 1.1664
+      },
+      "text": "void authorize_allows_valid_payment() {\n    PaymentService service = new PaymentService(new PaymentGateway());\n    service.authorize(new PaymentRequest(\"u1\", 42));\n  }",
+      "token_estimate": 42
     }
   ],
   "omitted": [
     {
-      "name": "AuditLogger.log",
-      "reason": "low score under token budget"
+      "name": "src/main/java/acme/PaymentService.java:6",
+      "reason": "overlap",
+      "score": 1.332
+    },
+    {
+      "name": "src/main/java/acme/PaymentService.java:17-22",
+      "reason": "overlap",
+      "score": 4.7358
+    },
+    {
+      "name": "src/main/java/acme/PaymentService.java:8-10",
+      "reason": "overlap",
+      "score": 1.564
+    }
+  ],
+  "query": {
+    "budget": 4000,
+    "file": null,
+    "format": "json",
+    "goal": "explain",
+    "line": null,
+    "symbol": "PaymentService.authorize"
+  },
+  "trace": [
+    {
+      "file": "src/main/java/acme/PaymentService.java",
+      "line": 12,
+      "stage": "anchor"
+    },
+    {
+      "kind": "target.definition",
+      "required": true,
+      "stage": "candidate"
+    },
+    {
+      "kind": "enclosing.type",
+      "required": true,
+      "stage": "candidate"
+    },
+    {
+      "diagnostic_count": 0,
+      "optional_count": 7,
+      "relationship_count": 2,
+      "stage": "candidates",
+      "test_count": 2
+    },
+    {
+      "optional_count": 7,
+      "required_count": 2,
+      "stage": "rank"
     }
   ],
   "uncertainty_notes": [
-    "gateway.charge(...) appears to be called by the target, but receiver type was not resolved."
+    "Unresolved calls relationship from target: gateway.charge."
   ]
 }

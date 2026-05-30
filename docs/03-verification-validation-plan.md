@@ -1,5 +1,10 @@
 # Verification and Validation Plan
 
+Historical note: this document records the MVP verification and validation plan.
+It is useful project history, but the current 1.0 user contract is defined by
+[`../README.md`](../README.md) and
+[`06-1.0-release-criteria.md`](06-1.0-release-criteria.md).
+
 ## 1. Purpose
 
 This plan defines how to determine whether `codectx` is built correctly and whether it is useful for its intended purpose.
@@ -324,10 +329,11 @@ tests/fixtures/cpp_basic/
 Each golden repo should include expected outputs:
 
 ```text
-expected_nodes.json
-expected_edges.json
+expected_graph.json
 expected_context_explain.json
 expected_context_failure_modes.json
+expected_context_dependencies.json
+expected_context_dependencies_source.json
 ```
 
 Golden outputs should be reviewed whenever extraction or ranking changes.
@@ -360,7 +366,7 @@ Before calling the MVP functional and useful, the project should pass:
 
 ## 11. Open validation questions
 
-These should be answered during MVP development:
+These were the open questions during MVP development:
 
 1. How often do Tree-sitter-only call-like edges help versus mislead?
 2. How much enclosing context should be included before it becomes wasteful?

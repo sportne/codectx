@@ -1,5 +1,10 @@
 # Engineering Plan
 
+Historical note: this document records the MVP engineering plan used to build
+the initial tool. It is useful project history, but the current 1.0 user
+contract is defined by [`../README.md`](../README.md) and
+[`06-1.0-release-criteria.md`](06-1.0-release-criteria.md).
+
 ## 1. Engineering goal
 
 Build a standalone Python CLI that turns a local source repository into a durable SQLite code graph and emits ranked, source-grounded context bundles for manual LLM use.
@@ -145,16 +150,11 @@ src/codectx/
       Java extraction.
     cpp_treesitter.py
       C++ extraction.
-    queries/
-      Tree-sitter query files.
-
   graph/
     schema.sql
       SQLite schema.
     store.py
       Connection management, migrations, inserts, queries.
-    models.py
-      Persisted row models.
     traversal.py
       Bounded graph walks and neighborhood assembly.
 
@@ -298,7 +298,8 @@ __pycache__
 .vscode
 ```
 
-Later tasks may add `.gitignore` parsing. The MVP can start with built-in ignore patterns.
+The implemented scanner also supports `.gitignore` and `.ignore` files plus
+explicit include, exclude, force-include, and no-ignore-file flags.
 
 ### 7.2 Language detection
 
@@ -631,16 +632,9 @@ index duration
 
 ## 13. Incremental indexing plan
 
-MVP can rebuild the full index by default.
-
-Later incremental indexing can use:
-
-- File content hashes.
-- Snapshot IDs.
-- Delete/reinsert facts for changed files.
-- Preserve unchanged file facts.
-
-Do not block MVP on incremental indexing.
+The MVP rebuilt the full index by default. The pre-1.0 implementation now adds
+a conservative per-file extraction cache while keeping immutable snapshots and
+project-wide reference resolution for each changed snapshot.
 
 ## 14. Packaging plan
 
@@ -656,7 +650,8 @@ Run:
 codectx --help
 ```
 
-MVP packaging can remain source-installable. Wheel distribution can come later.
+The project now builds source distributions, wheels, and PEX artifacts through
+the release workflow.
 
 ## 15. Key engineering risks
 

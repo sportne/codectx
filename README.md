@@ -190,22 +190,29 @@ Markdown and text output are intended for manual copy/paste into an LLM. JSON ou
 
 ## Documentation
 
-Start here:
+Current user and release contract:
 
-1. [`docs/01-requirements.md`](docs/01-requirements.md)
-2. [`docs/02-engineering-plan.md`](docs/02-engineering-plan.md)
-3. [`docs/03-verification-validation-plan.md`](docs/03-verification-validation-plan.md)
-4. [`docs/04-task-decomposition.md`](docs/04-task-decomposition.md)
-5. [`docs/05-1.0-readiness-plan.md`](docs/05-1.0-readiness-plan.md)
-6. [`docs/06-1.0-release-criteria.md`](docs/06-1.0-release-criteria.md)
-
-Supporting 1.0 readiness docs:
-
+- [`docs/06-1.0-release-criteria.md`](docs/06-1.0-release-criteria.md)
 - [`docs/dependency-compatibility.md`](docs/dependency-compatibility.md)
-- [`docs/real-repo-evaluation.md`](docs/real-repo-evaluation.md)
-- [`docs/real-repo-performance.md`](docs/real-repo-performance.md)
 - [`docs/release-automation.md`](docs/release-automation.md)
 - [`docs/07-incremental-indexing-decision.md`](docs/07-incremental-indexing-decision.md)
+- [`docs/examples/context_bundle.example.md`](docs/examples/context_bundle.example.md)
+- [`docs/examples/context_bundle.example.json`](docs/examples/context_bundle.example.json)
+
+Validation and operational docs:
+
+- [`docs/real-repo-evaluation.md`](docs/real-repo-evaluation.md)
+- [`docs/real-repo-performance.md`](docs/real-repo-performance.md)
+- [`docs/validation-notes.md`](docs/validation-notes.md)
+- [`docs/mvp-acceptance-review.md`](docs/mvp-acceptance-review.md)
+
+Historical planning docs:
+
+- [`docs/01-requirements.md`](docs/01-requirements.md)
+- [`docs/02-engineering-plan.md`](docs/02-engineering-plan.md)
+- [`docs/03-verification-validation-plan.md`](docs/03-verification-validation-plan.md)
+- [`docs/04-task-decomposition.md`](docs/04-task-decomposition.md)
+- [`docs/05-1.0-readiness-plan.md`](docs/05-1.0-readiness-plan.md)
 
 ## Single-file artifact
 
@@ -244,7 +251,13 @@ ranges for `pathspec`, `tree-sitter`, `tree-sitter-java`, and
 
 ## Development Status
 
-The MVP CLI is implemented for local Java and C++ indexing, graph inspection, search, neighborhoods, and context bundle generation. The pre-1.0 backlog tracks remaining release-readiness work in [`tasks/1_0_backlog.yaml`](tasks/1_0_backlog.yaml). See [`docs/validation-notes.md`](docs/validation-notes.md) for local validation notes.
+The MVP CLI and pre-1.0 readiness backlog are complete for local Java and C++
+indexing, graph inspection, search, neighborhoods, and context bundle
+generation. Declaring `1.0.0` now depends on release review and a release
+decision against [`docs/06-1.0-release-criteria.md`](docs/06-1.0-release-criteria.md),
+not unfinished backlog tasks. See [`tasks/1_0_backlog.yaml`](tasks/1_0_backlog.yaml)
+for completed readiness history and [`docs/validation-notes.md`](docs/validation-notes.md)
+for local validation notes.
 
 ## Design principles
 

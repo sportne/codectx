@@ -11,8 +11,8 @@ CODECTX_REAL_REPO_PERF=1 $HOME/.venvs/codectx/bin/python scripts/real_repo_perf.
 ```
 
 If `CODECTX_REAL_REPO_PERF` is not set to `1`, the script prints a skip message
-and exits successfully. If a configured repository is missing, it also exits
-successfully with a clear skip message.
+and exits successfully. If configured repositories are missing, the script
+records those targets as skipped while continuing to run available targets.
 
 By default, output is written under `/tmp/codectx-real-repo-perf-<timestamp>`.
 Pass `--output-dir PATH` to choose a location. Each run writes:
@@ -36,8 +36,7 @@ Java and C++ scenarios, scan filters, and conservative thresholds for:
 
 The harness copies each configured repository into the output directory before
 indexing so one-file-change measurements never modify the source validation
-repositories. Missing repositories are reported as skipped per target; available
-targets still run.
+repositories.
 
 Threshold failures are reported in normal mode but do not fail the process. To
 turn the harness into a gate, pass `--enforce` or set

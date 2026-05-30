@@ -18,7 +18,8 @@ CODECTX_REAL_REPO_EVAL=1 $HOME/.venvs/codectx/bin/python scripts/real_repo_eval.
 
 If `CODECTX_REAL_REPO_EVAL` is not set to `1`, the script prints a skip message
 and exits successfully. If one of the configured repositories is missing, the
-script also exits successfully with a clear skip message.
+script exits successfully with a clear whole-run skip message so quality scores
+are only compared when the full configured evaluation set is present.
 
 By default, output is written under `/tmp/codectx-real-repo-eval-<timestamp>`.
 Pass `--output-dir PATH` to choose a location. Each run writes:

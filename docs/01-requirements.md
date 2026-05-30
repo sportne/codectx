@@ -1,5 +1,10 @@
 # Requirements
 
+Historical note: this document records the MVP requirements used to build the
+initial tool. It is useful project history, but the current 1.0 user contract
+is defined by [`../README.md`](../README.md) and
+[`06-1.0-release-criteria.md`](06-1.0-release-criteria.md).
+
 ## 1. Purpose
 
 `codectx` shall provide a local, standalone way to index a source repository into a durable code graph and generate ranked context bundles that a human can manually transfer into an LLM.
@@ -95,7 +100,7 @@ A developer who wants to ask an LLM about unfamiliar or complex code, but needs 
 | ID | Requirement | MVP acceptance |
 | --- | --- | --- |
 | FR-010 | The system shall store enough file metadata to reproduce snippets. | File path, content hash, language, size, and line count are persisted. |
-| FR-011 | The system shall retrieve source snippets by file and line range. | `show-span` or context output can display exact requested lines. |
+| FR-011 | The system shall retrieve source snippets by file and line range. | Context output and graph inspection can display source-grounded line ranges. |
 | FR-012 | The system shall use byte offsets as canonical span coordinates. | Spans include start/end bytes and display line ranges. |
 | FR-013 | The system shall estimate token cost for snippets. | Each chunk has a rough token estimate. |
 
@@ -206,7 +211,7 @@ Initial MVP performance targets are intentionally modest and local-machine orien
 | ID | Requirement | Target |
 | --- | --- | --- |
 | NFR-040 | Language extraction shall be isolated by frontend modules. | Java and C++ frontends use shared fact model. |
-| NFR-041 | Tree-sitter queries shall be versioned source assets. | Query files live under `frontends/queries`. |
+| NFR-041 | Tree-sitter extraction behavior shall be versioned with source. | Frontend modules and tests live in the repository with the rest of the source. |
 | NFR-042 | SQL schema shall be explicit and tested. | Schema file is stored in source and migration tests cover it. |
 | NFR-043 | Context ranking shall be explainable. | Score components are traceable for each item. |
 

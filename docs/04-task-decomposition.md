@@ -1,5 +1,10 @@
 # Task Decomposition
 
+Historical note: this document records the completed MVP task decomposition.
+It is useful project history, but the current 1.0 user contract is defined by
+[`../README.md`](../README.md) and
+[`06-1.0-release-criteria.md`](06-1.0-release-criteria.md).
+
 This document defines an ordered, executable task plan for building the MVP.
 
 Each task is intended to be small enough for a focused implementation cycle and concrete enough to verify. The order favors getting to a useful context bundle as quickly as possible while preserving architecture for later enrichment.
