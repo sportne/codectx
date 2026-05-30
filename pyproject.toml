@@ -12,6 +12,7 @@ license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 authors = [{ name = "codectx contributors" }]
 dependencies = [
+  "pathspec>=0.12,<1",
   "tree-sitter",
   "tree-sitter-java",
   "tree-sitter-cpp",

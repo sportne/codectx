@@ -99,7 +99,7 @@ codectx context --repo tests/fixtures/cpp_basic --db /tmp/codectx-cpp-basic.sqli
 
 ## Command Reference
 
-- `index PATH`: recursively scans Java and C++ source/header files, applies the SQLite schema, extracts Tree-sitter facts, persists graph rows, creates optional FTS5 tables when supported, and prints health stats. Without `--db`, the database is stored at `<repo>/.codectx/graph.sqlite`. Use `--rebuild` to remove the database and SQLite sidecars first.
+- `index PATH`: recursively scans Java and C++ source/header files, applies the SQLite schema, extracts Tree-sitter facts, persists graph rows, creates optional FTS5 tables when supported, and prints health stats. Without `--db`, the database is stored at `<repo>/.codectx/graph.sqlite`. Use `--rebuild` to remove the database and SQLite sidecars first. Use repeated `--include PATTERN`, `--exclude PATTERN`, and `--force-include PATTERN` flags to control gitwildmatch-style scan filters relative to `PATH`; use `--no-ignore-files` to ignore `.gitignore` and `.ignore` rules.
 - `health --repo PATH`: reads persisted health stats for the latest snapshot. Add `--integrity` to run SQLite integrity, foreign-key, span-range, and unresolved-edge invariant checks. Integrity failures return a nonzero exit code.
 - `symbols QUERY`: searches symbol names, qualified names, symbol keys, and file paths.
 - `search QUERY`: combines symbol and chunk search, using FTS5 when available and deterministic SQL fallback otherwise.
@@ -109,7 +109,9 @@ codectx context --repo tests/fixtures/cpp_basic --db /tmp/codectx-cpp-basic.sqli
 
 ## Indexing Behavior
 
-The scanner walks repositories deterministically and skips built-in generated/cache directories such as `.git`, `.codectx`, `node_modules`, `target`, `build`, `bazel-*`, `out`, `dist`, `.venv`, `venv`, `__pycache__`, `.gradle`, `.idea`, and `.vscode`.
+The scanner walks repositories deterministically and skips built-in generated/cache directories such as `.git`, `.codectx`, `node_modules`, `target`, `build`, `bazel-*`, `out`, `dist`, `.venv`, `venv`, `__pycache__`, `.gradle`, `.idea`, and `.vscode`. It also respects root and nested `.gitignore` and `.ignore` files by default. Ignore-file rules are interpreted relative to the directory containing the ignore file.
+
+Scan filters use gitwildmatch-style patterns relative to the indexed path. When any `--include` flag is present, only supported source files matching at least one include pattern are indexed. `--exclude` removes matching supported source files. `--force-include` includes matching supported source files even when they are skipped by built-in directories, ignore files, or explicit excludes. Unsupported file extensions remain ignored even when force-included. `--no-ignore-files` disables `.gitignore` and `.ignore` processing, but built-in generated/cache directory skips still apply unless force-included.
 
 Supported languages are Java and C++ source/header extensions. Unsupported files are ignored. Indexing does not run Maven, Gradle, CMake, Bazel, preprocessors, compilers, or test suites. Parse failures are recorded as diagnostics and do not abort indexing.
 

@@ -51,7 +51,7 @@ milestones:
 
       - id: V1-003
         title: Add configurable include/exclude and ignore-file semantics
-        status: todo
+        status: done
         priority: P0
         type: AFK
         blocked_by: [V1-002]

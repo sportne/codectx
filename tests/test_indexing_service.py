@@ -61,6 +61,32 @@ def test_default_frontends_register_java_and_cpp() -> None:
     assert frontends["java"].language == "java"
 
 
+def test_run_index_applies_scan_filters_to_persisted_files(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    _write(repo / ".gitignore", "ignored/\n")
+    _write(repo / "src" / "Foo.java", "class Foo {}\n")
+    _write(repo / "src" / "Bar.java", "class Bar {}\n")
+    _write(repo / "ignored" / "Ignored.java", "class Ignored {}\n")
+    db_path = tmp_path / "graph.sqlite"
+
+    result = run_index(
+        repo,
+        db_path=db_path,
+        include_patterns=("src/**",),
+        exclude_patterns=("**/Bar.java",),
+        force_include_patterns=("ignored/**",),
+    )
+
+    assert isinstance(result, IndexResult)
+    assert result.stats["files"] == "2"
+    with GraphStore(db_path) as store:
+        rows = store.conn.execute("SELECT path FROM file ORDER BY path").fetchall()
+        assert [row["path"] for row in rows] == [
+            "ignored/Ignored.java",
+            "src/Foo.java",
+        ]
+
+
 def test_run_index_persists_java_and_cpp_graph_facts(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     _write(

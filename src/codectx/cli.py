@@ -49,6 +49,32 @@ def build_parser() -> argparse.ArgumentParser:
     p_index.add_argument("repo", type=Path)
     p_index.add_argument("--db", type=Path, default=None)
     p_index.add_argument("--rebuild", action="store_true")
+    p_index.add_argument(
+        "--include",
+        action="append",
+        default=None,
+        metavar="PATTERN",
+        help="Only index supported source files matching this gitwildmatch pattern. Can be repeated.",
+    )
+    p_index.add_argument(
+        "--exclude",
+        action="append",
+        default=None,
+        metavar="PATTERN",
+        help="Exclude supported source files matching this gitwildmatch pattern. Can be repeated.",
+    )
+    p_index.add_argument(
+        "--force-include",
+        action="append",
+        default=None,
+        metavar="PATTERN",
+        help="Include supported source files matching this pattern even when excluded or ignored. Can be repeated.",
+    )
+    p_index.add_argument(
+        "--no-ignore-files",
+        action="store_true",
+        help="Do not apply .gitignore or .ignore files while scanning.",
+    )
 
     p_health = sub.add_parser("health", help="Show index health information.")
     p_health.add_argument("--repo", type=Path, default=Path.cwd())
@@ -140,7 +166,15 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run_index(args: argparse.Namespace) -> int:
-    result = run_index(args.repo, db_path=args.db, rebuild=args.rebuild)
+    result = run_index(
+        args.repo,
+        db_path=args.db,
+        rebuild=args.rebuild,
+        include_patterns=tuple(args.include or ()),
+        exclude_patterns=tuple(args.exclude or ()),
+        force_include_patterns=tuple(args.force_include or ()),
+        use_ignore_files=not args.no_ignore_files,
+    )
     if isinstance(result, IndexingError):
         print(result.message)
         return 1

@@ -19,7 +19,7 @@ from codectx.frontends.cpp_treesitter import CppTreeSitterFrontend
 from codectx.frontends.java_treesitter import JavaTreeSitterFrontend
 from codectx.graph.store import GraphStore
 from codectx.scanner.models import FileRecord
-from codectx.scanner.repo import scan_repository
+from codectx.scanner.repo import ScanOptions, scan_repository
 
 
 @dataclass(frozen=True)
@@ -59,6 +59,10 @@ def run_index(
     *,
     db_path: str | Path | None = None,
     rebuild: bool = False,
+    include_patterns: tuple[str, ...] = (),
+    exclude_patterns: tuple[str, ...] = (),
+    force_include_patterns: tuple[str, ...] = (),
+    use_ignore_files: bool = True,
     frontends: FrontendRegistry | None = None,
 ) -> IndexResult | IndexingError:
     """Scan and persist index data for a repository."""
@@ -74,7 +78,15 @@ def run_index(
     if rebuild:
         remove_db_files(resolved_db_path)
 
-    records = scan_repository(repo_path)
+    records = scan_repository(
+        repo_path,
+        ScanOptions(
+            include_patterns=include_patterns,
+            exclude_patterns=exclude_patterns,
+            force_include_patterns=force_include_patterns,
+            use_ignore_files=use_ignore_files,
+        ),
+    )
     fingerprint = content_fingerprint(records)
     with GraphStore(resolved_db_path) as store:
         store.apply_schema()

@@ -9,6 +9,7 @@ from codectx.contexting import ContextResult
 from codectx.frontends.base import EdgeFact, NodeFact
 from codectx.graph.store import GraphStore
 from codectx.graph.traversal import NeighborhoodEdge, NeighborhoodNode
+from codectx.indexing import IndexResult
 from codectx.neighborhooding import NeighborhoodResult
 from codectx.scanner.models import FileRecord
 from codectx.source.spans import SourceSpan
@@ -18,6 +19,23 @@ def test_parser_accepts_all_initial_commands() -> None:
     parser = build_parser()
 
     assert parser.parse_args(["index", "."]).command == "index"
+    index_args = parser.parse_args(
+        [
+            "index",
+            ".",
+            "--include",
+            "src/**",
+            "--exclude",
+            "vendor/**",
+            "--force-include",
+            "vendor/needed.cpp",
+            "--no-ignore-files",
+        ]
+    )
+    assert index_args.include == ["src/**"]
+    assert index_args.exclude == ["vendor/**"]
+    assert index_args.force_include == ["vendor/needed.cpp"]
+    assert index_args.no_ignore_files is True
     assert parser.parse_args(["health"]).command == "health"
     assert parser.parse_args(["search", "PaymentService"]).command == "search"
     assert parser.parse_args(["symbols", "PaymentService"]).command == "symbols"
@@ -43,6 +61,60 @@ def test_parser_accepts_all_initial_commands() -> None:
     )
     assert parser.parse_args(["inspect-node", "123"]).command == "inspect-node"
     assert parser.parse_args(["inspect-edge", "456"]).command == "inspect-edge"
+
+
+def test_index_command_delegates_scan_filter_options(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    captured = {}
+    db_path = tmp_path / "graph.sqlite"
+
+    def fake_run_index(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return IndexResult(
+            repo=tmp_path.resolve(),
+            db_path=db_path,
+            snapshot_id=1,
+            stats={"files": "0"},
+        )
+
+    monkeypatch.setattr("codectx.cli.run_index", fake_run_index)
+
+    assert (
+        main(
+            [
+                "index",
+                str(tmp_path),
+                "--db",
+                str(db_path),
+                "--rebuild",
+                "--include",
+                "src/**",
+                "--include",
+                "include/**",
+                "--exclude",
+                "vendor/**",
+                "--force-include",
+                "vendor/needed.cpp",
+                "--no-ignore-files",
+            ]
+        )
+        == 0
+    )
+
+    assert "files: 0" in capsys.readouterr().out
+    assert captured == {
+        "args": (tmp_path,),
+        "kwargs": {
+            "db_path": db_path,
+            "rebuild": True,
+            "include_patterns": ("src/**", "include/**"),
+            "exclude_patterns": ("vendor/**",),
+            "force_include_patterns": ("vendor/needed.cpp",),
+            "use_ignore_files": False,
+        },
+    }
 
 
 def test_parser_version_exits_with_package_version(
