@@ -22,7 +22,7 @@ PEX_RESOLVE_FLAGS ?= \
 	format format-check \
 	lint typecheck dead-code reachability \
 	test architecture coverage coverage-report \
-	package artifact artifact-smoke release-ci clean ci
+	package package-smoke artifact artifact-smoke release-ci clean ci
 
 help:
 	@echo "codectx Makefile targets:"
@@ -39,9 +39,10 @@ help:
 	@echo "  make coverage       - Run tests and enforce 90% per-file coverage"
 	@echo "  make coverage-report - Run tests with terminal and JSON coverage reporting"
 	@echo "  make package        - Build source and wheel distributions"
+	@echo "  make package-smoke  - Build and smoke-test installed source/wheel artifacts"
 	@echo "  make artifact       - Build one Linux/Windows runnable PEX artifact at $(ARTIFACT)"
 	@echo "  make artifact-smoke - Build and smoke-test the PEX artifact"
-	@echo "  make release-ci     - Run CI gates, build distributions, and smoke-test the PEX artifact"
+	@echo "  make release-ci     - Run CI gates and smoke-test release artifacts"
 	@echo "  make clean          - Remove local build and test artifacts"
 	@echo "  make ci             - Run format-check, lint, reachability, architecture, and coverage gates"
 
@@ -87,6 +88,9 @@ coverage: coverage-report
 package:
 	"$(PYTHON)" -m build --no-isolation
 
+package-smoke: package
+	"$(PYTHON)" scripts/smoke_release_artifacts.py
+
 artifact:
 	mkdir -p "$(dir $(ARTIFACT))"
 	"$(PYTHON)" -m pex --project . -c codectx -o "$(ARTIFACT)" $(ARTIFACT_PLATFORMS) $(PEX_FLAGS) $(PEX_RESOLVE_FLAGS)
@@ -95,7 +99,7 @@ artifact-smoke: artifact
 	"$(PYTHON)" "$(ARTIFACT)" --version
 	"$(PYTHON)" "$(ARTIFACT)" --help >/dev/null
 
-release-ci: ci package artifact-smoke
+release-ci: ci package-smoke artifact-smoke
 
 clean:
 	rm -rf build dist .coverage .mypy_cache .pytest_cache .ruff_cache *.egg-info src/*.egg-info coverage.json htmlcov coverage.xml

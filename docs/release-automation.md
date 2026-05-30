@@ -13,8 +13,9 @@ git push origin v0.1.0
 
 The workflow validates that the tag version matches both `pyproject.toml` and
 `src/codectx/__init__.py`. It then runs `make release-ci`, builds the source
-distribution, wheel, and a versioned PEX, uploads them as workflow artifacts,
-and creates or updates the matching GitHub Release.
+distribution, wheel, and a versioned PEX, smoke-tests the installed source and
+wheel artifacts in isolated virtual environments, uploads the artifacts as
+workflow artifacts, and creates or updates the matching GitHub Release.
 
 Production tags must use this shape:
 
