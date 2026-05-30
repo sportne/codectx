@@ -191,7 +191,7 @@ milestones:
 
       - id: V1-011
         title: Document 1.0 user guarantees and known limitations
-        status: todo
+        status: done
         priority: P2
         type: AFK
         blocked_by: [V1-001, V1-002, V1-006]

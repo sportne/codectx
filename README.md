@@ -8,13 +8,13 @@ The project is intentionally **not** an LLM integration, MCP server, IDE plugin,
 
 > A local, Python-based code-context packaging tool that indexes Java and C++ repositories into a SQLite-backed graph and emits provenance-aware Markdown, JSON, and plain-text context bundles for manual LLM use.
 
-## MVP objective
+## 1.0 Readiness Objective
 
-The MVP should answer this question well:
+The 1.0-ready CLI should answer this question well:
 
 > Given a file/line or symbol name, what source-grounded context should a human paste into an LLM to understand or ask about this code?
 
-Supported MVP commands:
+The stable-core 1.0 command set is:
 
 ```bash
 codectx index /path/to/repo [--db /path/to/graph.sqlite] [--rebuild]
@@ -28,7 +28,30 @@ codectx inspect-node 123 --repo /path/to/repo
 codectx inspect-edge 456 --repo /path/to/repo
 ```
 
-## MVP scope
+## 1.0 User Guarantees
+
+For 1.0, `codectx` uses a conservative stable-core contract:
+
+- The documented CLI commands and flags in this README and
+  [`docs/06-1.0-release-criteria.md`](docs/06-1.0-release-criteria.md) are
+  stable. Future minor releases may add flags, fields, formats, or goals.
+- Context output formats `markdown`, `json`, and `text` remain available.
+- JSON bundle field meanings for `query`, `anchor`, `index_health`, `items`,
+  `omitted`, `uncertainty_notes`, and `trace` are stable, but exact ranking
+  scores, tie-breakers, and scoring internals are not.
+- The SQLite database is a local cache and inspection artifact. It can be
+  deleted and rebuilt at any time, and future incompatible schema changes may
+  require `codectx index <repo> --rebuild`.
+- Source and wheel installs are supported on platforms where Python 3.11 or
+  3.12 and the bounded runtime dependencies install successfully. Release PEX
+  artifacts target Linux and Windows on amd64 CPython 3.11 and 3.12.
+- The supported runtime baseline uses bounded Tree-sitter and scan-filter
+  dependencies documented in
+  [`docs/dependency-compatibility.md`](docs/dependency-compatibility.md).
+- Supported release artifacts are a source distribution, wheel, and versioned
+  PEX attached to GitHub Releases.
+
+## 1.0 Scope
 
 Included:
 
@@ -41,7 +64,7 @@ Included:
 - Context bundle generation with ranking, token budgeting, provenance, and uncertainty notes.
 - Markdown, JSON, and plain-text output.
 
-Excluded from MVP:
+Excluded from 1.0:
 
 - MCP.
 - Direct LLM service integration.
@@ -115,6 +138,11 @@ Scan filters use gitwildmatch-style patterns relative to the indexed path. When 
 
 Supported languages are Java and C++ source/header extensions. Unsupported files are ignored. Indexing does not run Maven, Gradle, CMake, Bazel, preprocessors, compilers, or test suites. Parse failures are recorded as diagnostics and do not abort indexing.
 
+Supported-extension files must be UTF-8 text. UTF-8 BOMs are accepted and byte
+spans remain relative to the original file bytes. Invalid UTF-8 and binary-like
+source files are retained as file records with actionable diagnostics rather
+than crashing indexing or context generation.
+
 The SQLite database stores file records, symbol nodes, edges, occurrences, snippets/chunks, diagnostics, index health stats, and optional FTS tables. The database is local and can be deleted or rebuilt at any time.
 
 ## Output Formats
@@ -125,14 +153,16 @@ Markdown and text output are intended for manual copy/paste into an LLM. JSON ou
 
 `codectx` runs locally against local files. It does not call an LLM, upload source code, send telemetry, or require a remote service. The user decides what rendered context to copy elsewhere.
 
-## Limitations
+## 1.0 Caveats And Known Limitations
 
 - Java and C++ extraction is heuristic and Tree-sitter based, not compiler-perfect semantic analysis.
 - C++ templates, macros, overload resolution, includes, and build-configuration-specific code are only partially understood.
 - Java symbol resolution does not perform full classpath, generics, annotation processing, or build-tool analysis.
 - Call-like and reference edges are conservative heuristics; unresolved relationships are expected and rendered explicitly.
-- Large enclosing scopes can consume much of a small context budget.
-- Parser diagnostics from vendored or third-party C++ code can affect failure-mode bundles until ignored-path tuning is expanded.
+- Large enclosing scopes are compacted for small budgets, but token budgeting is
+  still heuristic.
+- Parser diagnostics from vendored or third-party C++ code can affect
+  failure-mode bundles when project-specific scan filters are not configured.
 - `context` bundles are prompt-preparation aids, not correctness proofs.
 
 ## Repository layout
@@ -166,6 +196,15 @@ Start here:
 2. [`docs/02-engineering-plan.md`](docs/02-engineering-plan.md)
 3. [`docs/03-verification-validation-plan.md`](docs/03-verification-validation-plan.md)
 4. [`docs/04-task-decomposition.md`](docs/04-task-decomposition.md)
+5. [`docs/05-1.0-readiness-plan.md`](docs/05-1.0-readiness-plan.md)
+6. [`docs/06-1.0-release-criteria.md`](docs/06-1.0-release-criteria.md)
+
+Supporting 1.0 readiness docs:
+
+- [`docs/dependency-compatibility.md`](docs/dependency-compatibility.md)
+- [`docs/real-repo-evaluation.md`](docs/real-repo-evaluation.md)
+- [`docs/real-repo-performance.md`](docs/real-repo-performance.md)
+- [`docs/release-automation.md`](docs/release-automation.md)
 
 ## Single-file artifact
 
@@ -204,7 +243,7 @@ ranges for `pathspec`, `tree-sitter`, `tree-sitter-java`, and
 
 ## Development Status
 
-The MVP CLI is implemented for local Java and C++ indexing, graph inspection, search, neighborhoods, and context bundle generation. See [`docs/validation-notes.md`](docs/validation-notes.md) for the latest local validation pass.
+The MVP CLI is implemented for local Java and C++ indexing, graph inspection, search, neighborhoods, and context bundle generation. The pre-1.0 backlog tracks remaining release-readiness work in [`tasks/1_0_backlog.yaml`](tasks/1_0_backlog.yaml). See [`docs/validation-notes.md`](docs/validation-notes.md) for local validation notes.
 
 ## Design principles
 
