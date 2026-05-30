@@ -30,11 +30,12 @@ Pass `--output-dir PATH` to choose a location. Each run writes:
 - A structured `summary.json`.
 
 The manifest records expected usefulness labels and 1-to-5 quality scores from
-the MVP validation rubric: Java bundles were generally useful and C++ bundles
-were partially useful. The original MVP review found the `solve_a_star`
-failure-mode bundle was weak because vendored parser diagnostics could dominate
-optional context; the current default C++ target now excludes `third_party/**`
-so the harness tracks the filtered 1.0-readiness behavior.
+the validation rubric: Java bundles are generally useful and C++ bundles are
+partially useful. The original MVP review found the `solve_a_star` failure-mode
+bundle was weak because vendored and unrelated parser diagnostics could dominate
+optional context; the current default C++ target excludes `third_party/**`, and
+failure-mode planning keeps only anchor-file or closely related parser
+diagnostics as context items while preserving aggregate diagnostic warnings.
 
 Use `summary.md` for human review and `summary.json` for comparing runs. A
 repository `status` of `ok` means indexing finished, `integrity` records the

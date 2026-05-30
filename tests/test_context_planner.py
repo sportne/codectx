@@ -704,6 +704,44 @@ def test_build_failure_modes_bundle_skips_vendor_diagnostic_for_omitted_test(
     )
 
 
+def test_build_failure_modes_bundle_keeps_related_diagnostics_only(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_failure_modes_graph(
+            store,
+            repo,
+            include_related_diagnostic=True,
+            include_unrelated_diagnostic=True,
+        )
+        anchor = resolve_file_line_anchor(
+            store.conn, snapshot_id, "src/PaymentService.java", 4
+        )
+        assert isinstance(anchor, AnchorResult)
+
+        bundle = build_context_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=1000,
+            index_health={"diagnostics": "3"},
+            query={"goal": "failure-modes", "budget": 1000},
+        )
+
+    diagnostics = [item for item in bundle.items if item.kind == "diagnostic.parser"]
+    assert [item.file for item in diagnostics] == [
+        "src/PaymentService.java",
+        "include/PaymentService.hpp",
+    ]
+    assert diagnostics[0].score_trace["goal_relevance"] == 4.0
+    assert diagnostics[1].score_trace["goal_relevance"] == 2.0
+    assert all(item.file != "src/Unrelated.cpp" for item in bundle.items)
+    assert bundle.index_health["diagnostics"] == "3"
+
+
 def test_build_dependencies_bundle_prioritizes_imports_types_and_fields(
     tmp_path: Path,
 ) -> None:
@@ -1430,7 +1468,12 @@ def _seed_neighborhood_context_graph(store: GraphStore, repo: Path) -> int:
 
 
 def _seed_failure_modes_graph(
-    store: GraphStore, repo: Path, *, include_vendor_diagnostic: bool = False
+    store: GraphStore,
+    repo: Path,
+    *,
+    include_vendor_diagnostic: bool = False,
+    include_related_diagnostic: bool = False,
+    include_unrelated_diagnostic: bool = False,
 ) -> int:
     service_source = (
         "class PaymentService {\n"
@@ -1453,6 +1496,12 @@ def _seed_failure_modes_graph(
     vendor_source = "BROKEN_VENDOR_MACRO(\n"
     if include_vendor_diagnostic:
         _write(repo / "third_party" / "googletest" / "gtest.cc", vendor_source)
+    related_source = "const PaymentServiceConfig &config = {}) noexcept;\n"
+    if include_related_diagnostic:
+        _write(repo / "include" / "PaymentService.hpp", related_source)
+    unrelated_source = "BROKEN_UNRELATED_MACRO(\n"
+    if include_unrelated_diagnostic:
+        _write(repo / "src" / "Unrelated.cpp", unrelated_source)
     store.apply_schema()
     repo_id = store.create_repo(repo)
     snapshot_id = store.create_snapshot(repo_id)
@@ -1482,6 +1531,26 @@ def _seed_failure_modes_graph(
                 size_bytes=len(vendor_source.encode("utf-8")),
                 line_count=1,
                 metadata={"is_vendor": True},
+            )
+        )
+    if include_related_diagnostic:
+        records.append(
+            FileRecord(
+                path="include/PaymentService.hpp",
+                language="cpp",
+                content_hash="related-diagnostic",
+                size_bytes=len(related_source.encode("utf-8")),
+                line_count=1,
+            )
+        )
+    if include_unrelated_diagnostic:
+        records.append(
+            FileRecord(
+                path="src/Unrelated.cpp",
+                language="cpp",
+                content_hash="unrelated-diagnostic",
+                size_bytes=len(unrelated_source.encode("utf-8")),
+                line_count=1,
             )
         )
     file_ids = store.insert_files(snapshot_id, records)
@@ -1588,6 +1657,46 @@ def _seed_failure_modes_graph(
                     start_col=0,
                     end_line=1,
                     end_col=len(vendor_source),
+                ),
+                code="parse_error",
+                metadata={"node": "ERROR"},
+            )
+        )
+    if include_related_diagnostic:
+        diagnostics.append(
+            DiagnosticFact(
+                file_path="include/PaymentService.hpp",
+                severity="error",
+                message="C++ parse error in related header",
+                extractor="treesitter-cpp",
+                span=SourceSpan(
+                    file_path="include/PaymentService.hpp",
+                    start_byte=0,
+                    end_byte=len(related_source.encode("utf-8")),
+                    start_line=1,
+                    start_col=0,
+                    end_line=1,
+                    end_col=len(related_source),
+                ),
+                code="parse_error",
+                metadata={"node": "ERROR"},
+            )
+        )
+    if include_unrelated_diagnostic:
+        diagnostics.append(
+            DiagnosticFact(
+                file_path="src/Unrelated.cpp",
+                severity="error",
+                message="C++ parse error in unrelated source",
+                extractor="treesitter-cpp",
+                span=SourceSpan(
+                    file_path="src/Unrelated.cpp",
+                    start_byte=0,
+                    end_byte=len(unrelated_source.encode("utf-8")),
+                    start_line=1,
+                    start_col=0,
+                    end_line=1,
+                    end_col=len(unrelated_source),
                 ),
                 code="parse_error",
                 metadata={"node": "ERROR"},

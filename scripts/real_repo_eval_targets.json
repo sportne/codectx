@@ -87,9 +87,9 @@
           "symbol": "solve_a_star",
           "goal": "failure-modes",
           "budget": 3500,
-          "expected_usefulness": "weak",
-          "quality_score": 2.1,
-          "notes": "Known weak case where vendored parser diagnostics may dominate optional context."
+          "expected_usefulness": "partially useful",
+          "quality_score": 3.0,
+          "notes": "Should include the target, enclosing namespace, same-file includes, and only anchor-related parser diagnostics while preserving aggregate diagnostic warnings."
         }
       ]
     }

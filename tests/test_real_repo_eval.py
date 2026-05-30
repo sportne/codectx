@@ -14,8 +14,8 @@ def test_load_manifest_reads_default_targets() -> None:
 
     assert [target.id for target in targets] == ["mundane-java-di", "cpp-helper-libs"]
     assert targets[0].contexts
-    assert targets[1].contexts[-1].expected_usefulness == "weak"
-    assert targets[1].contexts[-1].quality_score == 2.1
+    assert targets[1].contexts[-1].expected_usefulness == "partially useful"
+    assert targets[1].contexts[-1].quality_score == 3.0
     assert targets[1].exclude_patterns == ("third_party/**",)
 
 

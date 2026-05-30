@@ -170,7 +170,12 @@ def _goal_relevance(candidate: RankingCandidate, goal: str) -> float:
     if candidate.kind.startswith("diagnostic."):
         if candidate.metadata.get("is_vendor") is True:
             return 0.5
-        return 4.0
+        relation = candidate.metadata.get("diagnostic_relation")
+        if relation == "anchor-file":
+            return 4.0
+        if relation == "related":
+            return 2.0
+        return 0.0
     if any(
         marker in text
         for marker in (

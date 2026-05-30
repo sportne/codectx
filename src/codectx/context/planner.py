@@ -439,6 +439,9 @@ def _diagnostic_candidates(
     for row in rows:
         file_path = None if row["file_path"] is None else str(row["file_path"])
         is_vendor = is_vendor_path(file_path)
+        relation = _diagnostic_relation(file_path, anchor, is_vendor)
+        if relation == "unrelated":
+            continue
         start_line = None if row["start_line"] is None else int(row["start_line"])
         end_line = None if row["end_line"] is None else int(row["end_line"])
         line_range = _line_range(start_line, end_line)
@@ -470,6 +473,7 @@ def _diagnostic_candidates(
                 metadata={
                     **_metadata(str(row["metadata_json"])),
                     "diagnostic_id": int(row["id"]),
+                    "diagnostic_relation": relation,
                     "is_vendor": is_vendor,
                     "severity": severity,
                     "code": code,
@@ -478,6 +482,25 @@ def _diagnostic_candidates(
             )
         )
     return candidates
+
+
+def _diagnostic_relation(
+    file_path: str | None, anchor: AnchorResult, is_vendor: bool
+) -> str:
+    if is_vendor:
+        return "vendor"
+    if file_path is None:
+        return "unrelated"
+    if file_path == anchor.file_path:
+        return "anchor-file"
+    diagnostic_stem = Path(file_path).stem.lower()
+    anchor_file_stem = Path(anchor.file_path).stem.lower()
+    related_stems = {anchor_file_stem}
+    if anchor.node_name is not None:
+        related_stems.add(str(anchor.node_name).lower())
+    if diagnostic_stem and diagnostic_stem in related_stems:
+        return "related"
+    return "unrelated"
 
 
 def _diagnostic_base_score(is_anchor_file: bool, is_vendor: bool) -> float:

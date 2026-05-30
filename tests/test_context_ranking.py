@@ -170,6 +170,58 @@ def test_failure_modes_goal_boosts_error_related_candidates() -> None:
     assert "goal_relevance" not in helper.score_trace
 
 
+def test_failure_modes_goal_scopes_parser_diagnostic_relevance() -> None:
+    anchor = RankingAnchor(
+        file_path="libs/path_finding/src/a_star.cpp",
+        line=201,
+        node_name="solve_a_star",
+    )
+
+    same_file = score_candidate(
+        RankingCandidate(
+            kind="diagnostic.parser",
+            file_path="libs/path_finding/src/a_star.cpp",
+            line_range=(210, 210),
+            text="broken macro",
+            token_estimate=4,
+            confidence=0.8,
+            metadata={"diagnostic_relation": "anchor-file"},
+        ),
+        anchor,
+        goal="failure-modes",
+    )
+    related = score_candidate(
+        RankingCandidate(
+            kind="diagnostic.parser",
+            file_path="libs/path_finding/include/cpp_helper_libs/path_finding/a_star.hpp",
+            line_range=(98, 98),
+            text="const AStarConfig &config = {}) noexcept;",
+            token_estimate=8,
+            confidence=0.8,
+            metadata={"diagnostic_relation": "related"},
+        ),
+        anchor,
+        goal="failure-modes",
+    )
+    unrelated = score_candidate(
+        RankingCandidate(
+            kind="diagnostic.parser",
+            file_path="libs/quantities/src/force.cpp",
+            line_range=(21, 21),
+            text="CPPHL_DEFINE_SCALED_QUANTITY_CORE_METHODS(Force, kToRawScales)",
+            token_estimate=12,
+            confidence=0.8,
+            metadata={"diagnostic_relation": "unrelated"},
+        ),
+        anchor,
+        goal="failure-modes",
+    )
+
+    assert same_file.score_trace["goal_relevance"] == 4.0
+    assert related.score_trace["goal_relevance"] == 2.0
+    assert "goal_relevance" not in unrelated.score_trace
+
+
 def test_dependencies_goal_boosts_dependency_shaped_candidates() -> None:
     anchor = RankingAnchor(file_path="src/PaymentService.java", line=5)
     used_type = score_candidate(
