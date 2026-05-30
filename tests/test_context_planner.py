@@ -282,6 +282,29 @@ def test_build_explain_bundle_uses_source_line_fallback(tmp_path: Path) -> None:
     assert "source-line fallback" in bundle.uncertainty_notes[0]
 
 
+def test_build_explain_bundle_reports_invalid_source_fallback(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_invalid_source_fallback_graph(store, repo)
+        anchor = resolve_file_line_anchor(store.conn, snapshot_id, "src/Bad.java", 1)
+        assert isinstance(anchor, AnchorResult)
+
+        bundle = build_explain_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=100,
+            index_health={},
+        )
+
+    assert bundle.items == []
+    assert any("not valid UTF-8" in note for note in bundle.uncertainty_notes)
+
+
 def test_build_explain_bundle_uses_node_source_range_before_nearest_chunk(
     tmp_path: Path,
 ) -> None:
@@ -2257,6 +2280,28 @@ def _seed_fallback_graph(store: GraphStore, repo: Path) -> int:
         ],
         file_ids,
         {},
+    )
+    return snapshot_id
+
+
+def _seed_invalid_source_fallback_graph(store: GraphStore, repo: Path) -> int:
+    path = repo / "src" / "Bad.java"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"class Bad {\xff}\n")
+    store.apply_schema()
+    repo_id = store.create_repo(repo)
+    snapshot_id = store.create_snapshot(repo_id)
+    store.insert_files(
+        snapshot_id,
+        [
+            FileRecord(
+                path="src/Bad.java",
+                language="java",
+                content_hash="invalid-utf8",
+                size_bytes=13,
+                line_count=1,
+            ),
+        ],
     )
     return snapshot_id
 

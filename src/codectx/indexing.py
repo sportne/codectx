@@ -20,6 +20,7 @@ from codectx.frontends.java_treesitter import JavaTreeSitterFrontend
 from codectx.graph.store import GraphStore
 from codectx.scanner.models import FileRecord
 from codectx.scanner.repo import ScanOptions, scan_repository
+from codectx.source.decoding import SourceValidation, validate_source_bytes
 
 
 @dataclass(frozen=True)
@@ -200,13 +201,41 @@ def extract_graph_facts(
         frontend = frontends.get(record.language)
         if frontend is None:
             continue
-        facts = frontend.extract(record.path, (repo / record.path).read_bytes())
+        source = (repo / record.path).read_bytes()
+        validation = validate_source_bytes(record.path, source)
+        if not validation.ok:
+            diagnostics.extend(_source_validation_diagnostics(record.path, validation))
+            continue
+        facts = frontend.extract(record.path, source)
         nodes.extend(facts.nodes)
         edges.extend(facts.edges)
         occurrences.extend(facts.occurrences)
         chunks.extend(facts.chunks)
         diagnostics.extend(facts.diagnostics)
     return nodes, edges, occurrences, chunks, diagnostics
+
+
+def _source_validation_diagnostics(
+    file_path: str, validation: SourceValidation
+) -> list[DiagnosticFact]:
+    return [
+        DiagnosticFact(
+            file_path=file_path,
+            severity="error",
+            message=issue.message,
+            extractor="source-decoder",
+            code=issue.code,
+            metadata={
+                "encoding": validation.encoding,
+                **(
+                    {}
+                    if issue.byte_offset is None
+                    else {"byte_offset": issue.byte_offset}
+                ),
+            },
+        )
+        for issue in validation.issues
+    ]
 
 
 def resolve_unique_references(

@@ -10,6 +10,7 @@ from typing import Any
 from codectx.context.anchors import AnchorResult
 from codectx.context.bundle import ContextBundle, ContextItem, OmittedItem
 from codectx.context.ranking import RankingAnchor, RankingCandidate, score_candidate
+from codectx.source.decoding import validate_source_bytes
 from codectx.source.snippets import snippet_by_line_range
 from codectx.source.tokens import estimate_token_count
 
@@ -1166,7 +1167,7 @@ def _source_snippet(
     end_line: int,
     notes: list[str],
 ) -> Any:
-    source = _read_source(repo, file_path)
+    source = _read_source(repo, file_path, notes)
     if source is None:
         return None
     try:
@@ -1182,11 +1183,19 @@ def _is_vendor_path(file_path: str | None) -> bool:
     return bool({part.lower() for part in Path(file_path).parts} & VENDOR_PATH_HINTS)
 
 
-def _read_source(repo: Path, file_path: str) -> str | None:
+def _read_source(
+    repo: Path, file_path: str, notes: list[str] | None = None
+) -> str | None:
     path = repo / file_path
     if not path.exists():
         return None
-    return path.read_text(encoding="utf-8")
+    content = path.read_bytes()
+    validation = validate_source_bytes(file_path, content)
+    if not validation.ok:
+        if notes is not None:
+            notes.extend(issue.message for issue in validation.issues)
+        return None
+    return content.decode("utf-8")
 
 
 def _selected_chunk_ids(candidates: list[_Candidate]) -> set[int]:

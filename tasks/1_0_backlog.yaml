@@ -155,7 +155,7 @@ milestones:
 
       - id: V1-009
         title: Harden Unicode, encoding, and binary-file handling
-        status: todo
+        status: done
         priority: P2
         type: AFK
         blocked_by: [V1-002]

@@ -265,6 +265,86 @@ def test_run_index_persists_cpp_call_like_facts(tmp_path: Path) -> None:
         ]
 
 
+def test_run_index_records_invalid_utf8_diagnostic_without_crashing(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    path = repo / "src" / "Bad.java"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"class Bad {\xff}\n")
+    db_path = tmp_path / "graph.sqlite"
+
+    result = run_index(repo, db_path=db_path)
+
+    assert isinstance(result, IndexResult)
+    assert result.stats["files"] == "1"
+    assert result.stats["diagnostics"] == "1"
+    assert result.stats["nodes"] == "0"
+    with GraphStore(db_path) as store:
+        row = store.conn.execute(
+            "SELECT code, message, extractor, metadata_json FROM diagnostic"
+        ).fetchone()
+        assert row["code"] == "invalid_utf8"
+        assert row["extractor"] == "source-decoder"
+        assert "not valid UTF-8" in row["message"]
+        assert "byte_offset" in row["metadata_json"]
+
+
+def test_run_index_records_binary_source_diagnostic_without_crashing(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    path = repo / "src" / "Binary.cpp"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"int main() {}\x00more")
+    db_path = tmp_path / "graph.sqlite"
+
+    result = run_index(repo, db_path=db_path)
+
+    assert isinstance(result, IndexResult)
+    assert result.stats["files"] == "1"
+    assert result.stats["diagnostics"] == "1"
+    assert result.stats["nodes"] == "0"
+    with GraphStore(db_path) as store:
+        row = store.conn.execute(
+            "SELECT code, message, extractor, metadata_json FROM diagnostic"
+        ).fetchone()
+        assert row["code"] == "binary_source"
+        assert row["extractor"] == "source-decoder"
+        assert "binary content" in row["message"]
+        assert "byte_offset" in row["metadata_json"]
+
+
+def test_run_index_preserves_bom_and_multibyte_byte_spans(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    source = b'\xef\xbb\xbfclass Cafe { String name() { return "caf\xc3\xa9"; } }\n'
+    path = repo / "src" / "Cafe.java"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(source)
+    db_path = tmp_path / "graph.sqlite"
+
+    result = run_index(repo, db_path=db_path)
+
+    assert isinstance(result, IndexResult)
+    assert result.stats["diagnostics"] == "0"
+    with GraphStore(db_path) as store:
+        file_row = store.conn.execute(
+            "SELECT size_bytes, line_count FROM file WHERE path = 'src/Cafe.java'"
+        ).fetchone()
+        assert file_row["size_bytes"] == len(source)
+        assert file_row["line_count"] == 1
+        node_row = store.conn.execute(
+            """
+            SELECT start_byte, start_line, end_byte
+            FROM node
+            WHERE name = 'Cafe' AND kind = 'type'
+            """
+        ).fetchone()
+        assert node_row["start_byte"] == 3
+        assert node_row["start_line"] == 1
+        assert node_row["end_byte"] == len(source) - 1
+
+
 def test_run_index_resolves_unique_type_references_and_preserves_ambiguous(
     tmp_path: Path,
 ) -> None:
