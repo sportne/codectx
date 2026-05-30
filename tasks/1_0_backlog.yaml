@@ -69,7 +69,7 @@ milestones:
 
       - id: V1-004
         title: Improve token budgeting for large enclosing scopes
-        status: todo
+        status: done
         priority: P0
         type: AFK
         blocked_by: [V1-002]

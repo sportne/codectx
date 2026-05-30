@@ -59,6 +59,9 @@ def build_context_bundle(
     candidates.extend(enclosing)
     for candidate in enclosing:
         trace.append({"stage": "candidate", "kind": candidate.kind, "required": True})
+    candidates = _compact_large_required_enclosing_candidates(
+        candidates, budget, notes, trace
+    )
 
     relationship_candidates = _relationship_candidates(conn, repo_path, anchor, notes)
     if goal == "call-neighborhood":
@@ -876,6 +879,87 @@ def _select_candidates(
                 )
             )
     return selected, omitted
+
+
+def _compact_large_required_enclosing_candidates(
+    candidates: list[_Candidate],
+    budget: int,
+    notes: list[str],
+    trace: list[dict[str, Any]],
+) -> list[_Candidate]:
+    token_limit = max(250, budget // 3)
+    compacted: list[_Candidate] = []
+    for candidate in candidates:
+        if (
+            not candidate.required
+            or not candidate.kind.startswith("enclosing.")
+            or candidate.token_estimate <= token_limit
+        ):
+            compacted.append(candidate)
+            continue
+        compacted_candidate = _compact_candidate(candidate, token_limit)
+        compacted.append(compacted_candidate)
+        notes.append(
+            f"{candidate.kind} was compacted from "
+            f"{candidate.token_estimate} to {compacted_candidate.token_estimate} "
+            "estimated tokens to preserve budget for local context."
+        )
+        trace.append(
+            {
+                "stage": "compact",
+                "kind": candidate.kind,
+                "file": candidate.file,
+                "original_tokens": candidate.token_estimate,
+                "tokens": compacted_candidate.token_estimate,
+            }
+        )
+    return compacted
+
+
+def _compact_candidate(candidate: _Candidate, token_limit: int) -> _Candidate:
+    text = _compact_text(candidate.text, token_limit)
+    return _Candidate(
+        kind=candidate.kind,
+        file=candidate.file,
+        line_range=candidate.line_range,
+        text=text,
+        score=candidate.score,
+        token_estimate=estimate_token_count(text),
+        reason=candidate.reason,
+        confidence=candidate.confidence,
+        extractor=candidate.extractor,
+        required=candidate.required,
+        metadata={
+            **candidate.metadata,
+            "compacted": True,
+            "original_token_estimate": candidate.token_estimate,
+        },
+        score_trace=candidate.score_trace,
+    )
+
+
+def _compact_text(text: str, token_limit: int) -> str:
+    lines = text.splitlines(keepends=True)
+    marker = "\n... omitted remainder from compacted enclosing context ...\n"
+    max_chars = max(1, token_limit * 4 - len(marker))
+    if len(lines) <= 2:
+        return text[:max_chars].rstrip() + marker
+
+    kept_lines: list[str] = []
+    for line in lines:
+        candidate_text = "".join([*kept_lines, line]).rstrip() + marker
+        if estimate_token_count(candidate_text) > token_limit:
+            break
+        kept_lines.append(line)
+    omitted_line_count = max(0, len(lines) - len(kept_lines))
+    if omitted_line_count == 0:
+        return text
+    if not kept_lines:
+        return text[:max_chars].rstrip() + marker
+    return (
+        "".join(kept_lines).rstrip()
+        + f"\n... omitted {omitted_line_count} lines from compacted enclosing context ...\n"
+    )
 
 
 def _budget_sort_key(candidate: _Candidate) -> tuple[float, float, str, int, int]:

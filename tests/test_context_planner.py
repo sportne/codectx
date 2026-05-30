@@ -91,6 +91,97 @@ def test_build_explain_bundle_records_omitted_optional_candidates_by_budget(
     )
 
 
+def test_build_explain_bundle_compacts_large_required_enclosing_scope(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_large_enclosing_graph(store, repo)
+        anchor = resolve_file_line_anchor(store.conn, snapshot_id, "src/Large.java", 4)
+        assert isinstance(anchor, AnchorResult)
+
+        bundle = build_explain_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=900,
+            index_health={},
+        )
+
+    assert [item.kind for item in bundle.items[:2]] == [
+        "target.definition",
+        "enclosing.type",
+    ]
+    enclosing = bundle.items[1]
+    assert enclosing.token_estimate <= 300
+    assert enclosing.metadata["compacted"] is True
+    assert enclosing.metadata["original_token_estimate"] > 300
+    assert "... omitted " in enclosing.text
+    assert "compacted from" in bundle.uncertainty_notes[0]
+    assert any(
+        item.kind == "import" and "java.util.List" in item.text for item in bundle.items
+    )
+    assert any(
+        entry["stage"] == "compact"
+        and entry["kind"] == "enclosing.type"
+        and entry["original_tokens"] == enclosing.metadata["original_token_estimate"]
+        for entry in bundle.trace
+    )
+
+
+def test_build_explain_bundle_does_not_compact_target_even_when_large(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_large_target_graph(store, repo)
+        anchor = resolve_file_line_anchor(store.conn, snapshot_id, "src/Only.java", 2)
+        assert isinstance(anchor, AnchorResult)
+
+        bundle = build_explain_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=900,
+            index_health={},
+        )
+
+    assert bundle.items[0].kind == "target.definition"
+    assert bundle.items[0].token_estimate > 300
+    assert "compacted" not in bundle.items[0].metadata
+
+
+def test_build_explain_bundle_compacts_single_line_enclosing_under_limit(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_single_line_large_enclosing_graph(store, repo)
+        anchor = resolve_file_line_anchor(
+            store.conn, snapshot_id, "src/OneLine.java", 1
+        )
+        assert isinstance(anchor, AnchorResult)
+
+        bundle = build_explain_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=900,
+            index_health={},
+        )
+
+    enclosing = bundle.items[1]
+    assert enclosing.kind == "enclosing.type"
+    assert enclosing.token_estimate <= 300
+    assert "omitted remainder" in enclosing.text
+
+
 def test_build_explain_bundle_selects_optional_candidates_by_score_per_token(
     tmp_path: Path,
 ) -> None:
@@ -745,6 +836,279 @@ def _seed_explain_graph(
             ),
         )
     store.insert_chunks(chunks, file_ids, node_ids)
+    return snapshot_id
+
+
+def _seed_large_enclosing_graph(store: GraphStore, repo: Path) -> int:
+    large_body = "".join(f"  void helper{i:03d}() {{}}\n" for i in range(240))
+    source = (
+        "import java.util.List;\n"
+        f"class Large {{\n  void target() {{\n    helper000();\n  }}\n{large_body}}}\n"
+    )
+    _write(repo / "src" / "Large.java", source)
+    store.apply_schema()
+    repo_id = store.create_repo(repo)
+    snapshot_id = store.create_snapshot(repo_id)
+    file_ids = store.insert_files(
+        snapshot_id,
+        [
+            FileRecord(
+                path="src/Large.java",
+                language="java",
+                content_hash="large-enclosing",
+                size_bytes=len(source.encode("utf-8")),
+                line_count=246,
+            )
+        ],
+    )
+    node_ids = store.insert_nodes(
+        snapshot_id,
+        [
+            _java_node(
+                "type",
+                "Large",
+                "Large",
+                "java:src/Large.java#Large",
+                "src/Large.java",
+                2,
+                246,
+            ),
+            _java_node(
+                "callable",
+                "target",
+                "Large.target()",
+                "java:src/Large.java#Large.target()",
+                "src/Large.java",
+                3,
+                5,
+            ),
+            _java_node(
+                "callable",
+                "helper000",
+                "Large.helper000()",
+                "java:src/Large.java#Large.helper000()",
+                "src/Large.java",
+                6,
+                6,
+            ),
+        ],
+        file_ids,
+    )
+    store.insert_occurrences(
+        [
+            OccurrenceFact(
+                file_path="src/Large.java",
+                role="import",
+                text="java.util.List",
+                span=SourceSpan(
+                    file_path="src/Large.java",
+                    start_byte=0,
+                    end_byte=22,
+                    start_line=1,
+                    start_col=0,
+                    end_line=1,
+                    end_col=22,
+                ),
+                node_key=None,
+                resolved_key=None,
+                confidence=0.8,
+                extractor="test",
+                metadata={"static": False},
+            )
+        ],
+        file_ids,
+        node_ids,
+    )
+    store.insert_edges(
+        snapshot_id,
+        [
+            _edge(
+                "calls",
+                "java:src/Large.java#Large.target()",
+                "java:src/Large.java#Large.helper000()",
+                "src/Large.java",
+                4,
+            )
+        ],
+        file_ids,
+        node_ids,
+    )
+    store.insert_chunks(
+        [
+            ChunkFact(
+                file_path="src/Large.java",
+                node_key="java:src/Large.java#Large",
+                kind="definition",
+                start_line=2,
+                end_line=246,
+                text=source,
+                token_estimate=1_500,
+            ),
+            ChunkFact(
+                file_path="src/Large.java",
+                node_key="java:src/Large.java#Large.target()",
+                kind="definition",
+                start_line=3,
+                end_line=5,
+                text="  void target() {\n    helper000();\n  }\n",
+                token_estimate=10,
+            ),
+            ChunkFact(
+                file_path="src/Large.java",
+                node_key="java:src/Large.java#Large.helper000()",
+                kind="definition",
+                start_line=6,
+                end_line=6,
+                text="  void helper000() {}\n",
+                token_estimate=6,
+            ),
+        ],
+        file_ids,
+        node_ids,
+    )
+    return snapshot_id
+
+
+def _seed_single_line_large_enclosing_graph(store: GraphStore, repo: Path) -> int:
+    source = (
+        "class OneLine { void target() {} "
+        + " ".join(f"void helper{i:03d}() {{}}" for i in range(240))
+        + " }\n"
+    )
+    _write(repo / "src" / "OneLine.java", source)
+    store.apply_schema()
+    repo_id = store.create_repo(repo)
+    snapshot_id = store.create_snapshot(repo_id)
+    file_ids = store.insert_files(
+        snapshot_id,
+        [
+            FileRecord(
+                path="src/OneLine.java",
+                language="java",
+                content_hash="single-line-large-enclosing",
+                size_bytes=len(source.encode("utf-8")),
+                line_count=1,
+            )
+        ],
+    )
+    node_ids = store.insert_nodes(
+        snapshot_id,
+        [
+            _java_node(
+                "type",
+                "OneLine",
+                "OneLine",
+                "java:src/OneLine.java#OneLine",
+                "src/OneLine.java",
+                1,
+                1,
+            ),
+            _java_node(
+                "callable",
+                "target",
+                "OneLine.target()",
+                "java:src/OneLine.java#OneLine.target()",
+                "src/OneLine.java",
+                1,
+                1,
+            ),
+        ],
+        file_ids,
+    )
+    store.insert_chunks(
+        [
+            ChunkFact(
+                file_path="src/OneLine.java",
+                node_key="java:src/OneLine.java#OneLine",
+                kind="definition",
+                start_line=1,
+                end_line=1,
+                text=source,
+                token_estimate=1_500,
+            ),
+            ChunkFact(
+                file_path="src/OneLine.java",
+                node_key="java:src/OneLine.java#OneLine.target()",
+                kind="definition",
+                start_line=1,
+                end_line=1,
+                text="void target() {}",
+                token_estimate=5,
+            ),
+        ],
+        file_ids,
+        node_ids,
+    )
+    return snapshot_id
+
+
+def _seed_large_target_graph(store: GraphStore, repo: Path) -> int:
+    target_body = "".join(f"    step{i:03d}();\n" for i in range(240))
+    source = f"class Only {{\n  void target() {{\n{target_body}  }}\n}}\n"
+    _write(repo / "src" / "Only.java", source)
+    store.apply_schema()
+    repo_id = store.create_repo(repo)
+    snapshot_id = store.create_snapshot(repo_id)
+    file_ids = store.insert_files(
+        snapshot_id,
+        [
+            FileRecord(
+                path="src/Only.java",
+                language="java",
+                content_hash="large-target",
+                size_bytes=len(source.encode("utf-8")),
+                line_count=244,
+            )
+        ],
+    )
+    node_ids = store.insert_nodes(
+        snapshot_id,
+        [
+            _java_node(
+                "type",
+                "Only",
+                "Only",
+                "java:src/Only.java#Only",
+                "src/Only.java",
+                1,
+                244,
+            ),
+            _java_node(
+                "callable",
+                "target",
+                "Only.target()",
+                "java:src/Only.java#Only.target()",
+                "src/Only.java",
+                2,
+                243,
+            ),
+        ],
+        file_ids,
+    )
+    store.insert_chunks(
+        [
+            ChunkFact(
+                file_path="src/Only.java",
+                node_key="java:src/Only.java#Only",
+                kind="definition",
+                start_line=1,
+                end_line=244,
+                text=source,
+                token_estimate=1_500,
+            ),
+            ChunkFact(
+                file_path="src/Only.java",
+                node_key="java:src/Only.java#Only.target()",
+                kind="definition",
+                start_line=2,
+                end_line=243,
+                text=f"  void target() {{\n{target_body}  }}\n",
+                token_estimate=1_400,
+            ),
+        ],
+        file_ids,
+        node_ids,
+    )
     return snapshot_id
 
 
