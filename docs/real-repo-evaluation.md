@@ -29,9 +29,11 @@ Pass `--output-dir PATH` to choose a location. Each run writes:
 - A structured `summary.json`.
 
 The manifest records expected usefulness labels and 1-to-5 quality scores from
-the MVP validation rubric: Java bundles were generally useful, C++ bundles were
-partially useful, and the `solve_a_star` failure-mode bundle is a known weak
-case because vendored parser diagnostics can dominate optional context.
+the MVP validation rubric: Java bundles were generally useful and C++ bundles
+were partially useful. The original MVP review found the `solve_a_star`
+failure-mode bundle was weak because vendored parser diagnostics could dominate
+optional context; the current default C++ target now excludes `third_party/**`
+so the harness tracks the filtered 1.0-readiness behavior.
 
 Use `summary.md` for human review and `summary.json` for comparing runs. A
 repository `status` of `ok` means indexing finished, `integrity` records the
@@ -45,3 +47,9 @@ To update the evaluation set, edit `scripts/real_repo_eval_targets.json` and add
 or remove context targets. Each target should name a stable local repository,
 symbol query, goal, budget, expected usefulness, quality score, and reviewer
 notes.
+
+Repository targets may also define scan filters using the same gitwildmatch
+semantics as `codectx index`: `include_patterns`, `exclude_patterns`,
+`force_include_patterns`, and `use_ignore_files`. The default C++ target excludes
+`third_party/**` so vendor parser diagnostics do not dominate the validation
+bundles.

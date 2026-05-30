@@ -16,6 +16,7 @@ def test_load_manifest_reads_default_targets() -> None:
     assert targets[0].contexts
     assert targets[1].contexts[-1].expected_usefulness == "weak"
     assert targets[1].contexts[-1].quality_score == 2.1
+    assert targets[1].exclude_patterns == ("third_party/**",)
 
 
 def test_load_manifest_rejects_invalid_context_budget(tmp_path: Path) -> None:
@@ -31,6 +32,7 @@ def test_load_manifest_rejects_invalid_context_budget(tmp_path: Path) -> None:
                         "language": "java",
                         "path": "/missing",
                         "expected_status": "example",
+                        "exclude_patterns": ["third_party/**"],
                         "contexts": [
                             {
                                 "id": "case",

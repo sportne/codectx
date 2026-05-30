@@ -60,6 +60,9 @@
       "language": "cpp",
       "path": "/mnt/d/projects/cpp-helper-libs",
       "expected_status": "C++ bundles were usable for target/enclosing context but showed heuristic limits in the MVP validation pass.",
+      "exclude_patterns": [
+        "third_party/**"
+      ],
       "contexts": [
         {
           "id": "solve-dijkstra-explain",

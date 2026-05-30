@@ -39,6 +39,10 @@ class RepoTarget:
     language: str
     path: Path
     expected_status: str
+    include_patterns: tuple[str, ...]
+    exclude_patterns: tuple[str, ...]
+    force_include_patterns: tuple[str, ...]
+    use_ignore_files: bool
     contexts: tuple[ContextTarget, ...]
 
 
@@ -100,7 +104,15 @@ def _run_evaluation(
         bundle_dir.mkdir(parents=True, exist_ok=True)
 
         started = time.perf_counter()
-        index_result = run_index(target.path, db_path=db_path, rebuild=True)
+        index_result = run_index(
+            target.path,
+            db_path=db_path,
+            rebuild=True,
+            include_patterns=target.include_patterns,
+            exclude_patterns=target.exclude_patterns,
+            force_include_patterns=target.force_include_patterns,
+            use_ignore_files=target.use_ignore_files,
+        )
         index_seconds = time.perf_counter() - started
         if not isinstance(index_result, IndexResult):
             summary.append(
@@ -122,6 +134,12 @@ def _run_evaluation(
             "path": str(target.path),
             "status": "ok",
             "expected_status": target.expected_status,
+            "scan_filters": {
+                "include_patterns": list(target.include_patterns),
+                "exclude_patterns": list(target.exclude_patterns),
+                "force_include_patterns": list(target.force_include_patterns),
+                "use_ignore_files": target.use_ignore_files,
+            },
             "index_seconds": round(index_seconds, 4),
             "stats": dict(index_result.stats),
             "integrity": (
@@ -179,6 +197,7 @@ def _write_summary(path: Path, summary: list[dict[str, Any]]) -> None:
         lines.extend(
             [
                 f"- expected_status: {target['expected_status']}",
+                f"- scan_filters: {_format_scan_filters(target['scan_filters'])}",
                 f"- index_seconds: {target['index_seconds']}",
                 f"- integrity: {target['integrity']}",
                 "- stats: "
@@ -222,6 +241,10 @@ def _repo_target(value: object) -> RepoTarget:
         language=_required_str(value, "language"),
         path=Path(_required_str(value, "path")),
         expected_status=_required_str(value, "expected_status"),
+        include_patterns=_optional_str_tuple(value, "include_patterns"),
+        exclude_patterns=_optional_str_tuple(value, "exclude_patterns"),
+        force_include_patterns=_optional_str_tuple(value, "force_include_patterns"),
+        use_ignore_files=_optional_bool(value, "use_ignore_files", default=True),
         contexts=tuple(_context_target(context) for context in contexts),
     )
 
@@ -251,6 +274,36 @@ def _required_str(value: dict[str, object], key: str) -> str:
     if not isinstance(found, str) or not found:
         raise ValueError(f"{key} must be a non-empty string")
     return found
+
+
+def _optional_str_tuple(value: dict[str, object], key: str) -> tuple[str, ...]:
+    found = value.get(key, [])
+    if not isinstance(found, list) or not all(
+        isinstance(item, str) and item for item in found
+    ):
+        raise ValueError(f"{key} must be a list of non-empty strings")
+    return tuple(found)
+
+
+def _optional_bool(value: dict[str, object], key: str, *, default: bool) -> bool:
+    found = value.get(key, default)
+    if not isinstance(found, bool):
+        raise ValueError(f"{key} must be a boolean")
+    return found
+
+
+def _format_scan_filters(scan_filters: object) -> str:
+    if not isinstance(scan_filters, dict):
+        return "<invalid>"
+    values = []
+    for key in (
+        "include_patterns",
+        "exclude_patterns",
+        "force_include_patterns",
+        "use_ignore_files",
+    ):
+        values.append(f"{key}={scan_filters.get(key)!r}")
+    return ", ".join(values)
 
 
 def _timestamp() -> str:

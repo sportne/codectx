@@ -86,7 +86,7 @@ milestones:
 
       - id: V1-005
         title: Reduce C++ vendor diagnostics and unresolved-reference noise
-        status: todo
+        status: done
         priority: P1
         type: AFK
         blocked_by: [V1-003]

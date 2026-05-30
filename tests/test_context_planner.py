@@ -609,6 +609,78 @@ def test_build_failure_modes_bundle_prioritizes_validation_and_failure_tests(
     assert bundle.index_health["diagnostics"] == "1"
 
 
+def test_build_failure_modes_bundle_deprioritizes_vendor_diagnostics(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_failure_modes_graph(
+            store, repo, include_vendor_diagnostic=True
+        )
+        anchor = resolve_file_line_anchor(
+            store.conn, snapshot_id, "src/PaymentService.java", 4
+        )
+        assert isinstance(anchor, AnchorResult)
+
+        bundle = build_context_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=90,
+            index_health={"diagnostics": "2"},
+            query={"goal": "failure-modes", "budget": 90},
+        )
+
+    diagnostics = [item for item in bundle.items if item.kind == "diagnostic.parser"]
+    assert [item.file for item in diagnostics] == ["src/PaymentService.java"]
+    assert diagnostics[0].score_trace["goal_relevance"] == 4.0
+    assert all(item.file != "third_party/googletest/gtest.cc" for item in bundle.items)
+    assert any(
+        omitted.name == "third_party/googletest/gtest.cc:1"
+        and omitted.reason == "budget"
+        for omitted in bundle.omitted
+    )
+
+
+def test_build_failure_modes_bundle_skips_vendor_diagnostic_for_omitted_test(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_failure_modes_graph(
+            store, repo, include_vendor_diagnostic=True
+        )
+        anchor = resolve_file_line_anchor(
+            store.conn, snapshot_id, "src/PaymentService.java", 4
+        )
+        assert isinstance(anchor, AnchorResult)
+
+        bundle = build_context_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=102,
+            index_health={"diagnostics": "2"},
+            query={"goal": "failure-modes", "budget": 102},
+        )
+
+    assert all(item.file != "third_party/googletest/gtest.cc" for item in bundle.items)
+    assert any(
+        omitted.name == "test/PaymentServiceFailureTest.java:2-4"
+        and omitted.reason == "budget"
+        for omitted in bundle.omitted
+    )
+    assert any(
+        omitted.name == "third_party/googletest/gtest.cc:1"
+        and omitted.reason == "budget"
+        for omitted in bundle.omitted
+    )
+
+
 def test_build_dependencies_bundle_prioritizes_imports_types_and_fields(
     tmp_path: Path,
 ) -> None:
@@ -1334,7 +1406,9 @@ def _seed_neighborhood_context_graph(store: GraphStore, repo: Path) -> int:
     return snapshot_id
 
 
-def _seed_failure_modes_graph(store: GraphStore, repo: Path) -> int:
+def _seed_failure_modes_graph(
+    store: GraphStore, repo: Path, *, include_vendor_diagnostic: bool = False
+) -> int:
     service_source = (
         "class PaymentService {\n"
         "  boolean authorize() {\n"
@@ -1353,29 +1427,41 @@ def _seed_failure_modes_graph(store: GraphStore, repo: Path) -> int:
     )
     _write(repo / "src" / "PaymentService.java", service_source)
     _write(repo / "test" / "PaymentServiceFailureTest.java", test_source)
+    vendor_source = "BROKEN_VENDOR_MACRO(\n"
+    if include_vendor_diagnostic:
+        _write(repo / "third_party" / "googletest" / "gtest.cc", vendor_source)
     store.apply_schema()
     repo_id = store.create_repo(repo)
     snapshot_id = store.create_snapshot(repo_id)
-    file_ids = store.insert_files(
-        snapshot_id,
-        [
+    records = [
+        FileRecord(
+            path="src/PaymentService.java",
+            language="java",
+            content_hash="service-failure",
+            size_bytes=len(service_source.encode("utf-8")),
+            line_count=7,
+        ),
+        FileRecord(
+            path="test/PaymentServiceFailureTest.java",
+            language="java",
+            content_hash="test-failure",
+            size_bytes=len(test_source.encode("utf-8")),
+            line_count=5,
+            is_test=True,
+        ),
+    ]
+    if include_vendor_diagnostic:
+        records.append(
             FileRecord(
-                path="src/PaymentService.java",
-                language="java",
-                content_hash="service-failure",
-                size_bytes=len(service_source.encode("utf-8")),
-                line_count=7,
-            ),
-            FileRecord(
-                path="test/PaymentServiceFailureTest.java",
-                language="java",
-                content_hash="test-failure",
-                size_bytes=len(test_source.encode("utf-8")),
-                line_count=5,
-                is_test=True,
-            ),
-        ],
-    )
+                path="third_party/googletest/gtest.cc",
+                language="cpp",
+                content_hash="vendor-failure",
+                size_bytes=len(vendor_source.encode("utf-8")),
+                line_count=1,
+                metadata={"is_vendor": True},
+            )
+        )
+    file_ids = store.insert_files(snapshot_id, records)
     nodes = [
         _java_node(
             "type",
@@ -1445,29 +1531,46 @@ def _seed_failure_modes_graph(store: GraphStore, repo: Path) -> int:
         file_ids,
         node_ids,
     )
-    store.insert_diagnostics(
-        snapshot_id,
-        [
-            DiagnosticFact(
+    diagnostics = [
+        DiagnosticFact(
+            file_path="src/PaymentService.java",
+            severity="error",
+            message="Java parse error near throw",
+            extractor="treesitter-java",
+            span=SourceSpan(
                 file_path="src/PaymentService.java",
+                start_byte=0,
+                end_byte=10,
+                start_line=5,
+                start_col=2,
+                end_line=5,
+                end_col=20,
+            ),
+            code="parse_error",
+            metadata={"node": "ERROR"},
+        )
+    ]
+    if include_vendor_diagnostic:
+        diagnostics.append(
+            DiagnosticFact(
+                file_path="third_party/googletest/gtest.cc",
                 severity="error",
-                message="Java parse error near throw",
-                extractor="treesitter-java",
+                message="C++ parse error in vendored googletest",
+                extractor="treesitter-cpp",
                 span=SourceSpan(
-                    file_path="src/PaymentService.java",
+                    file_path="third_party/googletest/gtest.cc",
                     start_byte=0,
-                    end_byte=10,
-                    start_line=5,
-                    start_col=2,
-                    end_line=5,
-                    end_col=20,
+                    end_byte=len(vendor_source.encode("utf-8")),
+                    start_line=1,
+                    start_col=0,
+                    end_line=1,
+                    end_col=len(vendor_source),
                 ),
                 code="parse_error",
                 metadata={"node": "ERROR"},
             )
-        ],
-        file_ids,
-    )
+        )
+    store.insert_diagnostics(snapshot_id, diagnostics, file_ids)
     store.insert_chunks(
         [
             ChunkFact(

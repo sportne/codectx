@@ -13,6 +13,10 @@ from codectx.context.ranking import RankingAnchor, RankingCandidate, score_candi
 from codectx.source.snippets import snippet_by_line_range
 from codectx.source.tokens import estimate_token_count
 
+VENDOR_PATH_HINTS = frozenset(
+    {"vendor", "vendors", "third_party", "third-party", "external"}
+)
+
 
 @dataclass(frozen=True)
 class _Candidate:
@@ -447,6 +451,7 @@ def _diagnostic_candidates(
     candidates: list[_Candidate] = []
     for row in rows:
         file_path = None if row["file_path"] is None else str(row["file_path"])
+        is_vendor = _is_vendor_path(file_path)
         start_line = None if row["start_line"] is None else int(row["start_line"])
         end_line = None if row["end_line"] is None else int(row["end_line"])
         line_range = _line_range(start_line, end_line)
@@ -468,14 +473,17 @@ def _diagnostic_candidates(
                 file=file_path,
                 line_range=line_range,
                 text=text,
-                score=3.8 if row["file_id"] == anchor.file_id else 3.0,
+                score=_diagnostic_base_score(
+                    row["file_id"] == anchor.file_id, is_vendor
+                ),
                 token_estimate=estimate_token_count(text),
                 reason=f"parser diagnostic: {severity}{code_label}: {message}",
-                confidence=0.8 if severity == "error" else 0.6,
+                confidence=_diagnostic_confidence(severity, is_vendor),
                 extractor=str(row["extractor"]),
                 metadata={
                     **_metadata(str(row["metadata_json"])),
                     "diagnostic_id": int(row["id"]),
+                    "is_vendor": is_vendor,
                     "severity": severity,
                     "code": code,
                     "message": message,
@@ -483,6 +491,18 @@ def _diagnostic_candidates(
             )
         )
     return candidates
+
+
+def _diagnostic_base_score(is_anchor_file: bool, is_vendor: bool) -> float:
+    if is_vendor:
+        return 0.8
+    return 3.8 if is_anchor_file else 3.0
+
+
+def _diagnostic_confidence(severity: str, is_vendor: bool) -> float:
+    if is_vendor:
+        return 0.3
+    return 0.8 if severity == "error" else 0.6
 
 
 def _relationship_candidates(
@@ -850,7 +870,9 @@ def _select_candidates(
         if (range_key := _candidate_range_key(candidate)) is not None
     ]
     omitted: list[OmittedItem] = []
-    for candidate in sorted(optional, key=_budget_sort_key):
+    for candidate in sorted(
+        optional, key=lambda candidate: _budget_sort_key(candidate, goal)
+    ):
         range_key = _candidate_range_key(candidate)
         if (
             range_key is not None
@@ -865,10 +887,19 @@ def _select_candidates(
                 )
             )
             continue
+        if _should_skip_vendor_diagnostic(candidate, omitted):
+            omitted.append(
+                OmittedItem(
+                    name=_candidate_name(candidate),
+                    reason="budget",
+                    score=candidate.score,
+                )
+            )
+            continue
         if used_tokens + candidate.token_estimate <= budget:
             selected.append(candidate)
             used_tokens += candidate.token_estimate
-            if range_key is not None:
+            if range_key is not None and not candidate.kind.startswith("diagnostic."):
                 selected_ranges.append(range_key)
         else:
             omitted.append(
@@ -879,6 +910,19 @@ def _select_candidates(
                 )
             )
     return selected, omitted
+
+
+def _should_skip_vendor_diagnostic(
+    candidate: _Candidate, omitted: list[OmittedItem]
+) -> bool:
+    return (
+        candidate.kind.startswith("diagnostic.")
+        and candidate.metadata.get("is_vendor") is True
+        and any(
+            item.reason == "budget" and not _is_vendor_path(item.name)
+            for item in omitted
+        )
+    )
 
 
 def _compact_large_required_enclosing_candidates(
@@ -962,10 +1006,15 @@ def _compact_text(text: str, token_limit: int) -> str:
     )
 
 
-def _budget_sort_key(candidate: _Candidate) -> tuple[float, float, str, int, int]:
-    ratio = candidate.score / max(candidate.token_estimate, 1)
+def _budget_sort_key(
+    candidate: _Candidate, goal: str
+) -> tuple[float, float, str, int, int]:
+    effective_score = candidate.score
+    if goal == "failure-modes" and candidate.kind.startswith("diagnostic."):
+        effective_score += -5.0 if candidate.metadata.get("is_vendor") is True else 5.0
+    ratio = effective_score / max(candidate.token_estimate, 1)
     start_line, end_line = candidate.line_range or (0, 0)
-    return (-ratio, -candidate.score, candidate.file or "", start_line, end_line)
+    return (-ratio, -effective_score, candidate.file or "", start_line, end_line)
 
 
 def _candidate_range_key(candidate: _Candidate) -> tuple[str, int, int] | None:
@@ -1125,6 +1174,12 @@ def _source_snippet(
     except ValueError:
         notes.append(f"Indexed line range is outside source bounds for {file_path}.")
         return None
+
+
+def _is_vendor_path(file_path: str | None) -> bool:
+    if file_path is None:
+        return False
+    return bool({part.lower() for part in Path(file_path).parts} & VENDOR_PATH_HINTS)
 
 
 def _read_source(repo: Path, file_path: str) -> str | None:

@@ -168,6 +168,8 @@ def _goal_relevance(candidate: RankingCandidate, goal: str) -> float:
         )
     ).lower()
     if candidate.kind.startswith("diagnostic."):
+        if candidate.metadata.get("is_vendor") is True:
+            return 0.5
         return 4.0
     if any(
         marker in text
