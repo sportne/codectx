@@ -126,7 +126,7 @@ def test_parser_version_exits_with_package_version(
         parser.parse_args(["--version"])
 
     assert exc_info.value.code == 0
-    assert "codectx 0.2.0" in capsys.readouterr().out
+    assert "codectx 1.0.0" in capsys.readouterr().out
 
 
 def test_neighborhood_command_delegates_to_neighborhood_service(

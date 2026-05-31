@@ -7,8 +7,8 @@ Tagged releases are published by `.github/workflows/release.yml`.
 Push a semantic version tag to publish a production release:
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
 The workflow validates that the tag version matches both `pyproject.toml` and
@@ -29,8 +29,8 @@ Use release-smoke tags to verify the publishing path without declaring a
 production release:
 
 ```bash
-git tag release-smoke/v0.2.0-smoke-202605300915
-git push origin release-smoke/v0.2.0-smoke-202605300915
+git tag release-smoke/v1.0.0-smoke-202605300915
+git push origin release-smoke/v1.0.0-smoke-202605300915
 ```
 
 Smoke tags must use this shape:

@@ -252,13 +252,12 @@ ranges for `pathspec`, `tree-sitter`, `tree-sitter-java`, and
 
 ## Development Status
 
-The MVP CLI and pre-1.0 readiness backlog are complete for local Java and C++
-indexing, graph inspection, search, neighborhoods, and context bundle
-generation. Declaring `1.0.0` now depends on release review and a release
-decision against [`docs/06-1.0-release-criteria.md`](docs/06-1.0-release-criteria.md),
-not unfinished backlog tasks. See [`tasks/1_0_backlog.yaml`](tasks/1_0_backlog.yaml)
-for completed readiness history and [`docs/validation-notes.md`](docs/validation-notes.md)
-for local validation notes.
+The MVP CLI, pre-1.0 readiness backlog, and 1.0 readiness audit are complete
+for local Java and C++ indexing, graph inspection, search, neighborhoods, and
+context bundle generation. The package metadata is set to `1.0.0`; see
+[`docs/08-1.0-readiness-audit.md`](docs/08-1.0-readiness-audit.md) for the
+release-readiness decision record and [`tasks/1_0_backlog.yaml`](tasks/1_0_backlog.yaml)
+for completed readiness history.
 
 ## Design principles
 

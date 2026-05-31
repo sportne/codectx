@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "codectx"
-version = "0.2.0"
+version = "1.0.0"
 description = "Local code graph and context bundle generator for manual LLM use."
 readme = "README.md"
 requires-python = ">=3.11"
