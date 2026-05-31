@@ -193,6 +193,7 @@ Markdown and text output are intended for manual copy/paste into an LLM. JSON ou
 Current user and release contract:
 
 - [`docs/06-1.0-release-criteria.md`](docs/06-1.0-release-criteria.md)
+- [`docs/08-1.0-readiness-audit.md`](docs/08-1.0-readiness-audit.md)
 - [`docs/dependency-compatibility.md`](docs/dependency-compatibility.md)
 - [`docs/release-automation.md`](docs/release-automation.md)
 - [`docs/07-incremental-indexing-decision.md`](docs/07-incremental-indexing-decision.md)
