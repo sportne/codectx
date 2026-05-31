@@ -1,270 +1,134 @@
 # codectx
 
-`codectx` is a standalone Python CLI for building a source-grounded code graph from a local repository and emitting ranked context bundles that a human can manually transfer into an LLM.
+`codectx` is a local CLI for turning Java and C++ repositories into
+source-grounded context bundles for LLM prompts.
 
-The project is intentionally **not** an LLM integration, MCP server, IDE plugin, compiler, static-analysis framework, or call-graph tool. It is a bridge capability: it helps users gather the right code context from a repository and package it clearly.
-
-## Project definition
-
-> A local, Python-based code-context packaging tool that indexes Java and C++ repositories into a SQLite-backed graph and emits provenance-aware Markdown, JSON, and plain-text context bundles for manual LLM use.
-
-## 1.0 Readiness Objective
-
-The 1.0-ready CLI should answer this question well:
-
-> Given a file/line or symbol name, what source-grounded context should a human paste into an LLM to understand or ask about this code?
-
-The stable-core 1.0 command set is:
-
-```bash
-codectx index /path/to/repo [--db /path/to/graph.sqlite] [--rebuild]
-codectx health --repo /path/to/repo [--db /path/to/graph.sqlite] [--integrity]
-codectx symbols "PaymentService" --repo /path/to/repo
-codectx search "PaymentService authorize" --repo /path/to/repo
-codectx context --repo /path/to/repo --symbol PaymentService.authorize --goal explain --format markdown
-codectx context --repo /path/to/repo --file src/main/java/acme/PaymentService.java --line 87 --goal failure-modes --format json
-codectx neighborhood --repo /path/to/repo --symbol PaymentService.authorize --depth 1 --direction out
-codectx inspect-node 123 --repo /path/to/repo
-codectx inspect-edge 456 --repo /path/to/repo
-```
-
-## 1.0 User Guarantees
-
-For 1.0, `codectx` uses a conservative stable-core contract:
-
-- The documented CLI commands and flags in this README and
-  [`docs/06-1.0-release-criteria.md`](docs/06-1.0-release-criteria.md) are
-  stable. Future minor releases may add flags, fields, formats, or goals.
-- Context output formats `markdown`, `json`, and `text` remain available.
-- JSON bundle field meanings for `query`, `anchor`, `index_health`, `items`,
-  `omitted`, `uncertainty_notes`, and `trace` are stable, but exact ranking
-  scores, tie-breakers, and scoring internals are not.
-- The SQLite database is a local cache and inspection artifact. It can be
-  deleted and rebuilt at any time, and future incompatible schema changes may
-  require `codectx index <repo> --rebuild`.
-- Source and wheel installs are supported on platforms where Python 3.11 or
-  3.12 and the bounded runtime dependencies install successfully. Release PEX
-  artifacts target Linux and Windows on amd64 CPython 3.11 and 3.12.
-- The supported runtime baseline uses bounded Tree-sitter and scan-filter
-  dependencies documented in
-  [`docs/dependency-compatibility.md`](docs/dependency-compatibility.md).
-- Supported release artifacts are a source distribution, wheel, and versioned
-  PEX attached to GitHub Releases.
-
-## 1.0 Scope
-
-Included:
-
-- Local-only operation.
-- Python implementation.
-- SQLite-backed graph store.
-- Tree-sitter based extraction for Java and C++.
-- Source file indexing, hashing, line offsets, and snippet extraction.
-- Generic polyglot graph model: files, symbols, spans, occurrences, edges, chunks.
-- Context bundle generation with ranking, token budgeting, provenance, and uncertainty notes.
-- Markdown, JSON, and plain-text output.
-
-Excluded from 1.0:
-
-- MCP.
-- Direct LLM service integration.
-- Remote services.
-- Cloud indexing.
-- IDE integration.
-- Compiler-perfect Java/C++ analysis.
-- Required Maven/Gradle/CMake/Bazel integration.
-- Neo4j or external graph databases.
-- Embeddings as a core dependency.
+It indexes a repository into a SQLite code graph, then emits Markdown, JSON, or
+plain-text snippets around a symbol or a file/line anchor. It does not call an
+LLM or upload source code.
 
 ## Quickstart
 
-Create the development environment and install the CLI:
+Get the PEX artifact, then verify it runs:
 
 ```bash
-make setup-venv
-make install-dev
+python dist/codectx.pex --version
 ```
 
-Index one of the checked-in fixtures:
+Index a repository once:
 
 ```bash
-codectx index tests/fixtures/java_basic --db /tmp/codectx-java-basic.sqlite --rebuild
-codectx health --repo tests/fixtures/java_basic --db /tmp/codectx-java-basic.sqlite --integrity
+python dist/codectx.pex index /path/to/repo
 ```
 
-Find a symbol and generate a context bundle:
+Then ask for context around a line in a file:
 
 ```bash
-codectx symbols PaymentService --repo tests/fixtures/java_basic --db /tmp/codectx-java-basic.sqlite
-codectx context \
-  --repo tests/fixtures/java_basic \
-  --db /tmp/codectx-java-basic.sqlite \
-  --symbol PaymentService.authorize \
+python dist/codectx.pex context \
+  --repo /path/to/repo \
+  --file src/main/java/acme/PaymentService.java \
+  --line 87 \
   --goal explain \
-  --budget 4000 \
   --format markdown
 ```
 
-Generate JSON or plain text instead:
+Write the bundle to a file:
 
 ```bash
-codectx context --repo tests/fixtures/java_basic --db /tmp/codectx-java-basic.sqlite --symbol PaymentService.authorize --goal failure-modes --format json
-codectx context --repo tests/fixtures/java_basic --db /tmp/codectx-java-basic.sqlite --file src/main/java/acme/PaymentService.java --line 10 --goal dependencies --format text
+python dist/codectx.pex context \
+  --repo /path/to/repo \
+  --file src/main/java/acme/PaymentService.java \
+  --line 87 \
+  --output /tmp/payment-service-context.md
 ```
 
-Write output to a file when the parent directory already exists:
+If you prefer to start from a symbol:
 
 ```bash
-mkdir -p /tmp/codectx-output
-codectx index tests/fixtures/cpp_basic --db /tmp/codectx-cpp-basic.sqlite --rebuild
-codectx context --repo tests/fixtures/cpp_basic --db /tmp/codectx-cpp-basic.sqlite --symbol PaymentService::authorize --goal call-neighborhood --output /tmp/codectx-output/context.md
+python dist/codectx.pex symbols PaymentService --repo /path/to/repo
+python dist/codectx.pex context --repo /path/to/repo --symbol PaymentService.authorize
 ```
 
-## Command Reference
+## Commands
 
-- `index PATH`: recursively scans Java and C++ source/header files, applies the SQLite schema, extracts Tree-sitter facts, persists graph rows, creates optional FTS5 tables when supported, and prints health stats. Without `--db`, the database is stored at `<repo>/.codectx/graph.sqlite`. Use `--rebuild` to remove the database and SQLite sidecars first. Use repeated `--include PATTERN`, `--exclude PATTERN`, and `--force-include PATTERN` flags to control gitwildmatch-style scan filters relative to `PATH`; use `--no-ignore-files` to ignore `.gitignore` and `.ignore` rules.
-- `health --repo PATH`: reads persisted health stats for the latest snapshot. Add `--integrity` to run SQLite integrity, foreign-key, span-range, and unresolved-edge invariant checks. Integrity failures return a nonzero exit code.
-- `symbols QUERY`: searches symbol names, qualified names, symbol keys, and file paths.
-- `search QUERY`: combines symbol and chunk search, using FTS5 when available and deterministic SQL fallback otherwise.
-- `context`: generates a ranked context bundle from either `--symbol QUERY` or `--file PATH --line N`. Supported goals are `explain`, `failure-modes`, `dependencies`, and `call-neighborhood`. Supported formats are `markdown`, `json`, and `text`.
-- `neighborhood`: shows a bounded graph neighborhood from a symbol seed. Use `--depth`, `--direction out|in|both`, repeated `--edge-kind`, and `--limit` to control traversal.
-- `inspect-node NODE_ID` and `inspect-edge EDGE_ID`: display persisted graph details, spans, confidence, extractor provenance, endpoints, unresolved text, and metadata.
+```bash
+codectx index PATH [--db PATH] [--rebuild]
+codectx health --repo PATH [--db PATH] [--integrity]
+codectx search QUERY --repo PATH [--db PATH]
+codectx symbols QUERY --repo PATH [--db PATH]
+codectx context --repo PATH (--symbol QUERY | --file PATH --line N) [options]
+codectx neighborhood --repo PATH --symbol QUERY [options]
+codectx inspect-node NODE_ID --repo PATH [--db PATH]
+codectx inspect-edge EDGE_ID --repo PATH [--db PATH]
+```
 
-## Indexing Behavior
+Common `context` options:
 
-The scanner walks repositories deterministically and skips built-in generated/cache directories such as `.git`, `.codectx`, `node_modules`, `target`, `build`, `bazel-*`, `out`, `dist`, `.venv`, `venv`, `__pycache__`, `.gradle`, `.idea`, and `.vscode`. It also respects root and nested `.gitignore` and `.ignore` files by default. Ignore-file rules are interpreted relative to the directory containing the ignore file.
+```bash
+--goal explain|failure-modes|dependencies|call-neighborhood
+--budget N
+--format markdown|json|text
+--output PATH
+```
 
-Scan filters use gitwildmatch-style patterns relative to the indexed path. When any `--include` flag is present, only supported source files matching at least one include pattern are indexed. `--exclude` removes matching supported source files. `--force-include` includes matching supported source files even when they are skipped by built-in directories, ignore files, or explicit excludes. Unsupported file extensions remain ignored even when force-included. `--no-ignore-files` disables `.gitignore` and `.ignore` processing, but built-in generated/cache directory skips still apply unless force-included.
+## What Gets Indexed
 
-Supported languages are Java and C++ source/header extensions. Unsupported files are ignored. Indexing does not run Maven, Gradle, CMake, Bazel, preprocessors, compilers, or test suites. Parse failures are recorded as diagnostics and do not abort indexing.
-
-Supported-extension files must be UTF-8 text. UTF-8 BOMs are accepted and byte
-spans remain relative to the original file bytes. Invalid UTF-8 and binary-like
-source files are retained as file records with actionable diagnostics rather
-than crashing indexing or context generation.
-
-The SQLite database stores file records, symbol nodes, edges, occurrences, snippets/chunks, diagnostics, index health stats, and optional FTS tables. The database is local and can be deleted or rebuilt at any time.
-
-## Output Formats
-
-Markdown and text output are intended for manual copy/paste into an LLM. JSON output is intended for scripts and regression tests. Every context bundle includes query details, anchor details, index health, ranked snippets, omitted candidates, uncertainty notes, and trace/provenance data.
-
-## Privacy
-
-`codectx` runs locally against local files. It does not call an LLM, upload source code, send telemetry, or require a remote service. The user decides what rendered context to copy elsewhere.
-
-## 1.0 Caveats And Known Limitations
-
-- Java and C++ extraction is heuristic and Tree-sitter based, not compiler-perfect semantic analysis.
-- C++ templates, macros, overload resolution, includes, and build-configuration-specific code are only partially understood.
-- Java symbol resolution does not perform full classpath, generics, annotation processing, or build-tool analysis.
-- Call-like and reference edges are conservative heuristics; unresolved relationships are expected and rendered explicitly.
-- Large enclosing scopes are compacted for small budgets, but token budgeting is
-  still heuristic.
-- Parser diagnostics from vendored or third-party C++ code can affect
-  failure-mode bundles when project-specific scan filters are not configured.
-- `context` bundles are prompt-preparation aids, not correctness proofs.
-
-## Repository layout
+`codectx` currently supports Java and C++ source/header files. It respects
+`.gitignore` and `.ignore` files by default, skips common generated/cache
+directories, and stores its default database at:
 
 ```text
-.
-├── README.md
-├── pyproject.toml
-├── docs/
-│   ├── 01-requirements.md
-│   ├── 02-engineering-plan.md
-│   ├── 03-verification-validation-plan.md
-│   ├── 04-task-decomposition.md
-│   └── examples/
-├── src/codectx/
-│   ├── cli.py
-│   ├── scanner/
-│   ├── frontends/
-│   ├── graph/
-│   ├── context/
-│   └── source/
-├── tasks/
-└── tests/
+<repo>/.codectx/graph.sqlite
 ```
 
-## Documentation
+Use scan filters when needed:
 
-Current user and release contract:
+```bash
+python dist/codectx.pex index /path/to/repo \
+  --include "src/**" \
+  --exclude "third_party/**" \
+  --rebuild
+```
 
-- [`docs/06-1.0-release-criteria.md`](docs/06-1.0-release-criteria.md)
-- [`docs/08-1.0-readiness-audit.md`](docs/08-1.0-readiness-audit.md)
-- [`docs/dependency-compatibility.md`](docs/dependency-compatibility.md)
-- [`docs/release-automation.md`](docs/release-automation.md)
-- [`docs/07-incremental-indexing-decision.md`](docs/07-incremental-indexing-decision.md)
-- [`docs/examples/context_bundle.example.md`](docs/examples/context_bundle.example.md)
-- [`docs/examples/context_bundle.example.json`](docs/examples/context_bundle.example.json)
+## Output
 
-Validation and operational docs:
+Context bundles include:
 
-- [`docs/real-repo-evaluation.md`](docs/real-repo-evaluation.md)
-- [`docs/real-repo-performance.md`](docs/real-repo-performance.md)
-- [`docs/validation-notes.md`](docs/validation-notes.md)
-- [`docs/mvp-acceptance-review.md`](docs/mvp-acceptance-review.md)
+- the requested anchor
+- index health metadata
+- ranked source snippets with file and line provenance
+- omitted candidates
+- uncertainty notes for heuristic or ambiguous matches
 
-Historical planning docs:
+Markdown and text are intended for copy/paste into an LLM. JSON is intended for
+scripts and regression tests.
 
-- [`docs/01-requirements.md`](docs/01-requirements.md)
-- [`docs/02-engineering-plan.md`](docs/02-engineering-plan.md)
-- [`docs/03-verification-validation-plan.md`](docs/03-verification-validation-plan.md)
-- [`docs/04-task-decomposition.md`](docs/04-task-decomposition.md)
-- [`docs/05-1.0-readiness-plan.md`](docs/05-1.0-readiness-plan.md)
+## Caveats
 
-## Single-file artifact
+- File context requires `--file PATH --line N`; a bare file path is not enough.
+- Index before generating context, or pass `--db` to use a specific index.
+- Java and C++ extraction is Tree-sitter based and heuristic, not
+  compiler-perfect.
+- C++ macros/templates and Java classpath-dependent behavior may be incomplete.
+- The SQLite database is a local cache and can be deleted and rebuilt.
 
-For offline deployment, build one runnable PEX artifact that contains `codectx`
-and its Python dependencies:
+## Development
+
+Run the test suite:
+
+```bash
+make test
+```
+
+Build a single-file PEX artifact:
 
 ```bash
 make setup-venv install-dev
 make artifact-smoke
 ```
 
-The artifact is written to `dist/codectx.pex`. By default it targets amd64
-Linux and Windows for CPython 3.11 and 3.12. Copy that file plus a compatible
-Python interpreter into the target environment, then run:
+The artifact is written to `dist/codectx.pex`. A local editable install also
+provides the shorter `codectx` command for development.
 
-```bash
-python dist/codectx.pex --help
-python dist/codectx.pex --version
-```
-
-The default target platforms can be overridden when building:
-
-```bash
-make artifact ARTIFACT_PLATFORMS="--platform manylinux2014_x86_64-cp-312-cp312"
-```
-
-Tagged release publishing, release-smoke verification tags, and recovery steps
-are documented in [`docs/release-automation.md`](docs/release-automation.md).
-
-## Runtime Compatibility
-
-`codectx` supports Python 3.11 and 3.12 for 1.0 readiness. Runtime dependency
-ranges for `pathspec`, `tree-sitter`, `tree-sitter-java`, and
-`tree-sitter-cpp` are bounded in `pyproject.toml` and documented in
-[`docs/dependency-compatibility.md`](docs/dependency-compatibility.md).
-
-## Development Status
-
-The MVP CLI, pre-1.0 readiness backlog, and 1.0 readiness audit are complete
-for local Java and C++ indexing, graph inspection, search, neighborhoods, and
-context bundle generation. The package metadata is set to `1.0.0`; see
-[`docs/08-1.0-readiness-audit.md`](docs/08-1.0-readiness-audit.md) for the
-release-readiness decision record and [`tasks/1_0_backlog.yaml`](tasks/1_0_backlog.yaml)
-for completed readiness history.
-
-## Design principles
-
-1. **Graph-first:** the durable artifact is a queryable source graph, not ASTs or parser outputs.
-2. **Source-grounded:** every useful graph fact should point back to files, spans, snippets, and provenance.
-3. **Polyglot-first:** Java and C++ are first-class, but the core graph avoids language-specific assumptions.
-4. **Local-first:** no service dependencies are required.
-5. **Manual-transfer friendly:** Markdown and plain text are first-class outputs, not afterthoughts.
-6. **Honest uncertainty:** heuristic references and unresolved calls are useful if labeled clearly.
-7. **Ranking is central:** the project succeeds by selecting the right context under a token budget.
+Further release, compatibility, validation, and maintainer notes live in
+[`docs/`](docs/), especially [`docs/project-notes.md`](docs/project-notes.md).
