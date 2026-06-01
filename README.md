@@ -42,6 +42,16 @@ python dist/codectx.pex context \
   --output /tmp/payment-service-context.md
 ```
 
+Choose how much context to include with `--budget`:
+
+```bash
+python dist/codectx.pex context \
+  --repo /path/to/repo \
+  --file src/main/java/acme/PaymentService.java \
+  --line 87 \
+  --budget 12000
+```
+
 If you prefer to start from a symbol:
 
 ```bash
