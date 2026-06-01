@@ -224,6 +224,99 @@ milestones:
           - Update release criteria and documentation with the decision.
         acceptance:
           - Records a decision on incremental indexing before 1.0, either implementing a minimal version or explicitly deferring it.
+  - id: V2
+    name: File-only context anchors
+    tasks:
+      - id: V2-001
+        title: Define the file-only context CLI contract
+        status: todo
+        priority: P1
+        type: AFK
+        blocked_by: []
+        rationale: >
+          Users should be able to ask for context around an indexed source file
+          without also identifying a specific line, while preserving the current
+          precise file/line anchor behavior.
+        work:
+          - Define `codectx context --file PATH` as a file-level anchor.
+          - Keep `codectx context --file PATH --line N` as the existing line-level anchor.
+          - Keep `--symbol QUERY --line N` invalid.
+          - Decide the rendered query and anchor metadata shape for file-level bundles.
+        acceptance:
+          - Documents and tests the CLI validation contract for file-only anchors without changing existing symbol or file/line behavior.
+
+      - id: V2-002
+        title: Resolve indexed files as first-class context anchors
+        status: todo
+        priority: P1
+        type: AFK
+        blocked_by: [V2-001]
+        rationale: >
+          File-only context needs an explicit anchor shape so planner code does
+          not fake a line number or overload the existing file/line anchor
+          semantics.
+        work:
+          - Add a file anchor resolver that validates the file exists in the latest indexed snapshot.
+          - Return file id, path, language, line count, and any useful file metadata.
+          - Produce actionable errors for missing indexes and unindexed files.
+          - Add focused resolver and service tests.
+        acceptance:
+          - Resolves `--file PATH` to an indexed file anchor and reports clear errors for missing or unindexed files.
+
+      - id: V2-003
+        title: Build file-level context from symbols in the file
+        status: todo
+        priority: P1
+        type: AFK
+        blocked_by: [V2-002]
+        rationale: >
+          A file-level bundle should use the symbols defined in the file as the
+          origin points for context collection instead of dumping the entire file
+          or choosing an arbitrary line.
+        work:
+          - Query callable, type, and field nodes/chunks defined in the anchor file.
+          - Add those definitions as file-origin candidates rather than mandatory target items.
+          - Reuse existing import/include, relationship, test, and diagnostic candidate logic across file symbols where practical.
+          - Deduplicate candidates by chunk id, edge id, and file/range.
+          - Fall back to file chunk or source snippet context when no symbols are indexed.
+        acceptance:
+          - Generates a context bundle for `--file PATH` that includes symbols from the file and related context collected from those symbols.
+
+      - id: V2-004
+        title: Rank and budget file-level bundles without line proximity
+        status: todo
+        priority: P1
+        type: AFK
+        blocked_by: [V2-003]
+        rationale: >
+          Existing ranking assumes a single anchor line; file-level bundles need
+          scoring that favors useful same-file symbols and graph-related context
+          without treating every symbol as required.
+        work:
+          - Add ranking behavior for file anchors that boosts same-file definitions and graph-related candidates.
+          - Avoid line-distance scoring when no line anchor exists.
+          - Ensure large files do not exhaust the budget with required same-file context.
+          - Add regression tests for multi-symbol files, large files, and overlapping candidates.
+        acceptance:
+          - Selects useful file-level context under budget without requiring every symbol in a large file.
+
+      - id: V2-005
+        title: Document and validate file-only context usage
+        status: todo
+        priority: P2
+        type: AFK
+        blocked_by: [V2-004]
+        rationale: >
+          The README currently states that file context requires a line; once
+          file-only anchors exist, user docs and validation examples must match
+          the supported workflow.
+        work:
+          - Update README quickstart and caveats for `context --file PATH`.
+          - Update release criteria or project notes with the file-level anchor contract.
+          - Add fixture or acceptance coverage for the PEX-style command shape.
+          - Record any known limitations for symbol-poor files.
+        acceptance:
+          - Documents the file-only context workflow and verifies it through existing CLI or acceptance tests.
 priority_order:
   - V1-001
   - V1-002
@@ -237,3 +330,8 @@ priority_order:
   - V1-010
   - V1-011
   - V1-012
+  - V2-001
+  - V2-002
+  - V2-003
+  - V2-004
+  - V2-005
