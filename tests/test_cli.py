@@ -267,7 +267,7 @@ def test_context_command_reports_invalid_anchor_shape(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["context", "--file", "src/Foo.java", "--repo", str(tmp_path)]) == 1
-    assert "--line is required" in capsys.readouterr().out
+    assert "No codectx index found" in capsys.readouterr().out
 
     assert (
         main(

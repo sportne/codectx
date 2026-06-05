@@ -109,16 +109,16 @@ def test_build_context_validates_anchor_shape(tmp_path: Path) -> None:
     assert "Provide only one context anchor" in duplicate_anchor.message
 
 
-def test_build_context_validates_file_line_anchor_shape(tmp_path: Path) -> None:
+def test_build_context_accepts_file_only_anchor_shape(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
 
-    missing_line = build_context(repo, file_path="src/Foo.java")
+    file_only = build_context(repo, file_path="src/Foo.java")
     bad_line = build_context(repo, file_path="src/Foo.java", line=0)
     symbol_with_line = build_context(repo, symbol="PaymentService", line=10)
 
-    assert isinstance(missing_line, ContextingError)
-    assert "--line is required" in missing_line.message
+    assert isinstance(file_only, ContextingError)
+    assert "No codectx index found" in file_only.message
     assert isinstance(bad_line, ContextingError)
     assert "Line number must be 1 or greater" in bad_line.message
     assert isinstance(symbol_with_line, ContextingError)

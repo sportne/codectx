@@ -247,8 +247,6 @@ def _validate_request(
         return ContextingError("Provide only one context anchor: --symbol or --file.")
     if symbol is not None and line is not None:
         return ContextingError("--line can only be used with --file.")
-    if file_path is not None and line is None:
-        return ContextingError("--line is required when using --file.")
     if line is not None and line < 1:
         return ContextingError("Line number must be 1 or greater.")
     if output_path is not None:
