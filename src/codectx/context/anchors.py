@@ -29,6 +29,18 @@ class AnchorResult:
 
 
 @dataclass(frozen=True)
+class FileAnchorResult:
+    """Resolved file-only anchor."""
+
+    file_id: int
+    file_path: str
+    language: str | None
+    line_count: int
+    is_test: bool
+    is_generated: bool
+
+
+@dataclass(frozen=True)
 class AnchorError:
     """Anchor resolution error."""
 
@@ -43,6 +55,33 @@ class _ChunkFields:
     chunk_end_line: int | None = None
     chunk_text: str | None = None
     chunk_token_estimate: int | None = None
+
+
+def resolve_file_anchor(
+    conn: Any,
+    snapshot_id: int,
+    file_path: str,
+) -> FileAnchorResult | AnchorError:
+    """Resolve a repo-relative file to indexed file metadata."""
+    file_row = conn.execute(
+        """
+        SELECT id, path, language, line_count, is_test, is_generated
+        FROM file
+        WHERE snapshot_id = ? AND path = ?
+        """,
+        (snapshot_id, file_path),
+    ).fetchone()
+    if file_row is None:
+        return AnchorError(f"File is not indexed in this snapshot: {file_path}")
+
+    return FileAnchorResult(
+        file_id=int(file_row["id"]),
+        file_path=str(file_row["path"]),
+        language=None if file_row["language"] is None else str(file_row["language"]),
+        line_count=int(file_row["line_count"]),
+        is_test=bool(file_row["is_test"]),
+        is_generated=bool(file_row["is_generated"]),
+    )
 
 
 def resolve_file_line_anchor(

@@ -6,7 +6,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from codectx.context.anchors import AnchorResult, resolve_file_line_anchor
+from codectx.context.anchors import (
+    AnchorResult,
+    FileAnchorResult,
+    resolve_file_anchor,
+    resolve_file_line_anchor,
+)
+from codectx.context.bundle import ContextBundle
 from codectx.context.formatters import format_json, format_markdown, format_text
 from codectx.context.planner import build_context_bundle
 from codectx.graph.query import SymbolResult
@@ -103,23 +109,33 @@ def build_context(
                 f"Symbol query matched {len(symbol_matches)} symbols; "
                 "selected the top-ranked match."
             )
-        bundle = build_context_bundle(
-            store.conn,
-            snapshot_id,
-            repo_path,
-            anchor,
-            budget=budget,
-            index_health=stats,
-            query={
-                "goal": goal,
-                "budget": budget,
-                "format": output_format,
-                "symbol": symbol,
-                "file": None if file_path is None else str(file_path),
-                "line": line,
-            },
-            uncertainty_notes=uncertainty_notes,
-        )
+        query = {
+            "goal": goal,
+            "budget": budget,
+            "format": output_format,
+            "symbol": symbol,
+            "file": None if file_path is None else str(file_path),
+            "line": line,
+        }
+        if isinstance(anchor, FileAnchorResult):
+            bundle = _build_file_anchor_bundle(
+                anchor,
+                budget=budget,
+                output_format=output_format,
+                index_health=stats,
+                query=query,
+            )
+        else:
+            bundle = build_context_bundle(
+                store.conn,
+                snapshot_id,
+                repo_path,
+                anchor,
+                budget=budget,
+                index_health=stats,
+                query=query,
+                uncertainty_notes=uncertainty_notes,
+            )
 
     return ContextResult(
         rendered_text=_format_bundle(bundle, output_format),
@@ -135,20 +151,27 @@ def _resolve_context_anchor(
     symbol: str | None,
     file_path: str | Path | None,
     line: int | None,
-) -> tuple[AnchorResult, list[SymbolResult]] | ContextingError:
+) -> tuple[AnchorResult | FileAnchorResult, list[SymbolResult]] | ContextingError:
     if file_path is not None:
         relative_file_path = _repo_relative_path(repo, file_path)
         if line is None:
-            return ContextingError("--line is required when using --file.")
-        file_anchor = resolve_file_line_anchor(
+            file_anchor = resolve_file_anchor(
+                store.conn,
+                snapshot_id,
+                relative_file_path,
+            )
+            if isinstance(file_anchor, FileAnchorResult):
+                return file_anchor, []
+            return ContextingError(file_anchor.message)
+        line_anchor = resolve_file_line_anchor(
             store.conn,
             snapshot_id,
             relative_file_path,
             line,
         )
-        if isinstance(file_anchor, AnchorResult):
-            return file_anchor, []
-        return ContextingError(file_anchor.message)
+        if isinstance(line_anchor, AnchorResult):
+            return line_anchor, []
+        return ContextingError(line_anchor.message)
 
     if symbol is None:
         return ContextingError("Provide either --symbol or --file for context.")
@@ -159,6 +182,43 @@ def _resolve_context_anchor(
     if isinstance(symbol_anchor, ContextingError):
         return symbol_anchor
     return symbol_anchor, matches
+
+
+def _build_file_anchor_bundle(
+    anchor: FileAnchorResult,
+    *,
+    budget: int,
+    output_format: str,
+    index_health: dict[str, str],
+    query: dict[str, Any],
+) -> ContextBundle:
+    return ContextBundle(
+        query=query,
+        anchor={
+            "anchor_kind": "file",
+            "file": anchor.file_path,
+            "file_id": anchor.file_id,
+            "language": anchor.language,
+            "line_count": anchor.line_count,
+            "is_test": anchor.is_test,
+            "is_generated": anchor.is_generated,
+        },
+        index_health=dict(sorted(index_health.items())),
+        items=[],
+        omitted=[],
+        uncertainty_notes=[
+            "File-level context collection from symbols will be added in a later task."
+        ],
+        trace=[
+            {
+                "stage": "anchor",
+                "anchor_kind": "file",
+                "file": anchor.file_path,
+                "budget": budget,
+                "format": output_format,
+            }
+        ],
+    )
 
 
 def _anchor_from_symbol(

@@ -340,6 +340,39 @@ def test_context_command_generates_markdown_for_file_line_anchor(
     assert "src/Foo.java:2" in output
 
 
+def test_context_command_generates_markdown_for_file_only_anchor(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    _write(repo / "src" / "Foo.java", "class Foo { void run() {} }\n")
+    db_path = tmp_path / "graph.sqlite"
+    assert main(["index", str(repo), "--db", str(db_path)]) == 0
+    capsys.readouterr()
+
+    assert (
+        main(
+            [
+                "context",
+                "--file",
+                "src/Foo.java",
+                "--repo",
+                str(repo),
+                "--db",
+                str(db_path),
+                "--format",
+                "markdown",
+            ]
+        )
+        == 0
+    )
+
+    output = capsys.readouterr().out
+    assert "# codectx context bundle" in output
+    assert "- anchor_kind: file" in output
+    assert "- file: src/Foo.java" in output
+    assert "- line_count: 1" in output
+
+
 def test_context_command_generates_json_text_and_output_file(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

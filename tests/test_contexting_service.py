@@ -31,6 +31,47 @@ def test_build_context_returns_markdown_for_file_line_anchor(tmp_path: Path) -> 
     assert result.output_path is None
 
 
+def test_build_context_returns_bundle_for_file_only_anchor(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    db_path = tmp_path / "graph.sqlite"
+    with GraphStore(db_path) as store:
+        _seed_context_graph(store, repo)
+
+    result = build_context(
+        repo,
+        db_path=db_path,
+        file_path="src/Foo.java",
+        output_format="json",
+    )
+
+    assert isinstance(result, ContextResult)
+    assert '"anchor_kind": "file"' in result.rendered_text
+    assert '"file": "src/Foo.java"' in result.rendered_text
+    assert '"language": "java"' in result.rendered_text
+    assert '"line": null' in result.rendered_text
+    assert '"line_count": 3' in result.rendered_text
+
+
+def test_build_context_resolves_absolute_file_only_anchor_inside_repo(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    db_path = tmp_path / "graph.sqlite"
+    with GraphStore(db_path) as store:
+        _seed_context_graph(store, repo)
+
+    result = build_context(
+        repo,
+        db_path=db_path,
+        file_path=repo / "src" / "Foo.java",
+        output_format="json",
+    )
+
+    assert isinstance(result, ContextResult)
+    assert '"anchor_kind": "file"' in result.rendered_text
+    assert '"file": "src/Foo.java"' in result.rendered_text
+
+
 def test_build_context_returns_json_and_text_for_symbol_anchor(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     db_path = tmp_path / "graph.sqlite"
@@ -200,13 +241,11 @@ def test_build_context_reports_missing_file_and_absolute_file_outside_repo(
         repo,
         db_path=db_path,
         file_path="src/Missing.java",
-        line=1,
     )
     outside_file = build_context(
         repo,
         db_path=db_path,
         file_path=tmp_path / "outside.java",
-        line=1,
     )
 
     assert isinstance(missing_file, ContextingError)

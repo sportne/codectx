@@ -5,6 +5,8 @@ from pathlib import Path
 from codectx.context.anchors import (
     AnchorError,
     AnchorResult,
+    FileAnchorResult,
+    resolve_file_anchor,
     resolve_file_line_anchor,
 )
 from codectx.frontends.base import ChunkFact, NodeFact
@@ -125,6 +127,32 @@ def test_resolve_file_line_anchor_reports_line_outside_file(tmp_path: Path) -> N
 
     assert isinstance(result, AnchorError)
     assert "outside indexed file" in result.message
+
+
+def test_resolve_file_anchor_returns_indexed_file_metadata(tmp_path: Path) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_anchor_graph(store, tmp_path)
+
+        result = resolve_file_anchor(store.conn, snapshot_id, "src/PaymentService.java")
+
+    assert isinstance(result, FileAnchorResult)
+    assert result.file_path == "src/PaymentService.java"
+    assert result.language == "java"
+    assert result.line_count == 7
+    assert result.is_test is False
+    assert result.is_generated is False
+
+
+def test_resolve_file_anchor_reports_missing_file(tmp_path: Path) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_anchor_graph(store, tmp_path)
+
+        result = resolve_file_anchor(store.conn, snapshot_id, "src/Missing.java")
+
+    assert isinstance(result, AnchorError)
+    assert "File is not indexed" in result.message
 
 
 def _seed_anchor_graph(store: GraphStore, repo: Path) -> int:
