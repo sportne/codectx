@@ -104,6 +104,39 @@ def score_candidate(
     )
 
 
+def score_file_candidate(
+    candidate: RankingCandidate,
+    file_path: str,
+    *,
+    query_text: str | None = None,
+    goal: str = DEFAULT_GOAL,
+) -> RankingResult:
+    """Score one context candidate for a file-level anchor."""
+    components = {
+        "target": 0.0,
+        "exact_match": 0.0,
+        "edge_relevance": _edge_relevance(candidate, goal),
+        "graph_proximity": _graph_proximity(candidate),
+        "source_proximity": 0.0,
+        "file_symbol": 2.2 if candidate.kind == "file.symbol" else 0.0,
+        "same_file": 1.4 if candidate.file_path == file_path else 0.0,
+        "lexical_match": 1.0 if _has_file_lexical_match(candidate, query_text) else 0.0,
+        "enclosing_context": 0.0,
+        "test_context": 0.7 if _is_test_context(candidate) else 0.0,
+        "confidence": round(0.5 * _clamp(candidate.confidence, 0.0, 1.0), 4),
+        "token_cost": -round(0.8 * min(candidate.token_estimate / 1000.0, 1.0), 4),
+        "redundancy": 0.0,
+    }
+    goal_relevance = _goal_relevance(candidate, goal)
+    if goal_relevance:
+        components["goal_relevance"] = goal_relevance
+    score = round(sum(components.values()), 4)
+    return RankingResult(
+        score=score,
+        score_trace={**components, "total": score},
+    )
+
+
 def _has_exact_match(
     candidate: RankingCandidate,
     anchor: RankingAnchor,
@@ -125,6 +158,23 @@ def _has_lexical_match(
     query_text: str | None,
 ) -> bool:
     needle = _normalize(query_text) or _normalize(anchor.node_name)
+    if needle is None:
+        return False
+    haystacks = (
+        candidate.file_path,
+        candidate.text,
+        candidate.metadata.get("node_name"),
+        candidate.metadata.get("qualified_name"),
+        candidate.metadata.get("symbol_key"),
+    )
+    return any(needle in str(_normalize(value, default="")) for value in haystacks)
+
+
+def _has_file_lexical_match(
+    candidate: RankingCandidate,
+    query_text: str | None,
+) -> bool:
+    needle = _normalize(query_text)
     if needle is None:
         return False
     haystacks = (

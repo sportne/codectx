@@ -913,6 +913,55 @@ def test_build_file_context_bundle_uses_symbols_as_origins(
     )
 
 
+def test_build_file_context_bundle_budgets_large_symbol_sets(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_large_file_context_graph(store, repo)
+        anchor = resolve_file_anchor(store.conn, snapshot_id, "src/Large.java")
+        assert isinstance(anchor, FileAnchorResult)
+
+        bundle = build_file_context_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=80,
+            index_health={"files": "1", "nodes": "12"},
+        )
+
+    assert 0 < len(bundle.items) < 12
+    assert all(item.kind == "file.symbol" for item in bundle.items)
+    assert any(omitted.reason == "budget" for omitted in bundle.omitted)
+
+
+def test_build_file_context_bundle_omits_overlapping_same_file_symbols(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_overlapping_file_context_graph(store, repo)
+        anchor = resolve_file_anchor(store.conn, snapshot_id, "src/Foo.java")
+        assert isinstance(anchor, FileAnchorResult)
+
+        bundle = build_file_context_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=1000,
+            index_health={"files": "1", "nodes": "2"},
+        )
+
+    assert [item.metadata.get("node_name") for item in bundle.items] == ["run"]
+    assert [(omitted.name, omitted.reason) for omitted in bundle.omitted] == [
+        ("src/Foo.java:1-3", "overlap")
+    ]
+
+
 def test_build_file_context_bundle_falls_back_when_no_symbols_are_indexed(
     tmp_path: Path,
 ) -> None:
@@ -1192,6 +1241,131 @@ def _seed_file_context_graph(store: GraphStore, repo: Path) -> int:
             )
         ],
         file_ids,
+    )
+    return snapshot_id
+
+
+def _seed_large_file_context_graph(store: GraphStore, repo: Path) -> int:
+    lines = ["class Large {"]
+    for index in range(12):
+        lines.append(f"  void method{index:02d}() {{}}")
+    lines.append("}")
+    source = "\n".join(lines) + "\n"
+    _write(repo / "src" / "Large.java", source)
+    store.apply_schema()
+    repo_id = store.create_repo(repo)
+    snapshot_id = store.create_snapshot(repo_id)
+    file_ids = store.insert_files(
+        snapshot_id,
+        [
+            FileRecord(
+                path="src/Large.java",
+                language="java",
+                content_hash="abc123",
+                size_bytes=len(source.encode("utf-8")),
+                line_count=len(lines),
+            )
+        ],
+    )
+    nodes = [
+        _java_node(
+            "callable",
+            f"method{index:02d}",
+            f"Large.method{index:02d}()",
+            f"java:src/Large.java#Large.method{index:02d}()",
+            "src/Large.java",
+            index + 2,
+            index + 2,
+        )
+        for index in range(12)
+    ]
+    node_ids = store.insert_nodes(snapshot_id, nodes, file_ids)
+    store.insert_chunks(
+        [
+            ChunkFact(
+                file_path="src/Large.java",
+                node_key=f"java:src/Large.java#Large.method{index:02d}()",
+                kind="definition",
+                start_line=index + 2,
+                end_line=index + 2,
+                text=f"  void method{index:02d}() {{}}\n",
+                token_estimate=20,
+            )
+            for index in range(12)
+        ],
+        file_ids,
+        node_ids,
+    )
+    return snapshot_id
+
+
+def _seed_overlapping_file_context_graph(store: GraphStore, repo: Path) -> int:
+    source = "class Foo {\n  void run() {}\n}\n"
+    _write(repo / "src" / "Foo.java", source)
+    store.apply_schema()
+    repo_id = store.create_repo(repo)
+    snapshot_id = store.create_snapshot(repo_id)
+    file_ids = store.insert_files(
+        snapshot_id,
+        [
+            FileRecord(
+                path="src/Foo.java",
+                language="java",
+                content_hash="abc123",
+                size_bytes=len(source.encode("utf-8")),
+                line_count=3,
+            )
+        ],
+    )
+    type_key = "java:src/Foo.java#Foo"
+    run_key = "java:src/Foo.java#Foo.run()"
+    node_ids = store.insert_nodes(
+        snapshot_id,
+        [
+            _java_node(
+                "type",
+                "Foo",
+                "Foo",
+                type_key,
+                "src/Foo.java",
+                1,
+                3,
+            ),
+            _java_node(
+                "callable",
+                "run",
+                "Foo.run()",
+                run_key,
+                "src/Foo.java",
+                2,
+                2,
+            ),
+        ],
+        file_ids,
+    )
+    store.insert_chunks(
+        [
+            ChunkFact(
+                file_path="src/Foo.java",
+                node_key=type_key,
+                kind="definition",
+                start_line=1,
+                end_line=3,
+                text=source,
+                token_estimate=8,
+            ),
+            ChunkFact(
+                file_path="src/Foo.java",
+                node_key=run_key,
+                kind="definition",
+                start_line=2,
+                end_line=2,
+                text="  void run() {}\n",
+                token_estimate=5,
+            ),
+        ],
+        file_ids,
+        node_ids,
     )
     return snapshot_id
 

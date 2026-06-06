@@ -8,7 +8,12 @@ from typing import Any
 
 from codectx.context.anchors import AnchorResult
 from codectx.context.bundle import OmittedItem
-from codectx.context.ranking import RankingAnchor, RankingCandidate, score_candidate
+from codectx.context.ranking import (
+    RankingAnchor,
+    RankingCandidate,
+    score_candidate,
+    score_file_candidate,
+)
 from codectx.source.tokens import estimate_token_count
 
 VENDOR_PATH_HINTS = frozenset(
@@ -97,6 +102,48 @@ def score_candidates(
                 metadata=candidate.metadata,
             ),
             ranking_anchor,
+            query_text=query_text,
+            goal=str(query.get("goal", "explain")),
+        )
+        scored.append(
+            Candidate(
+                kind=candidate.kind,
+                file=candidate.file,
+                line_range=candidate.line_range,
+                text=candidate.text,
+                score=result.score,
+                token_estimate=candidate.token_estimate,
+                reason=candidate.reason,
+                confidence=candidate.confidence,
+                extractor=candidate.extractor,
+                required=candidate.required,
+                metadata=candidate.metadata,
+                score_trace=result.score_trace,
+            )
+        )
+    return scored
+
+
+def score_file_candidates(
+    candidates: list[Candidate],
+    file_path: str,
+    query: dict[str, Any],
+) -> list[Candidate]:
+    """Apply shared ranking scores for file-level context candidates."""
+    query_text = _query_text(query)
+    scored: list[Candidate] = []
+    for candidate in candidates:
+        result = score_file_candidate(
+            RankingCandidate(
+                kind=candidate.kind,
+                file_path=candidate.file,
+                line_range=candidate.line_range,
+                text=candidate.text,
+                token_estimate=candidate.token_estimate,
+                confidence=candidate.confidence,
+                metadata=candidate.metadata,
+            ),
+            file_path,
             query_text=query_text,
             goal=str(query.get("goal", "explain")),
         )

@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from codectx.context.ranking import RankingAnchor, RankingCandidate, score_candidate
+from codectx.context.ranking import (
+    RankingAnchor,
+    RankingCandidate,
+    score_candidate,
+    score_file_candidate,
+)
 
 
 def test_score_candidate_prefers_target_definition_over_unrelated_sibling() -> None:
@@ -45,6 +50,41 @@ def test_score_candidate_prefers_target_definition_over_unrelated_sibling() -> N
     assert sibling.score_trace["target"] == 0.0
     assert sibling.score_trace["exact_match"] == 0.0
     assert target.score_trace["total"] == target.score
+
+
+def test_score_file_candidate_boosts_file_symbols_without_line_proximity() -> None:
+    symbol = score_file_candidate(
+        RankingCandidate(
+            kind="file.symbol",
+            file_path="src/Foo.java",
+            line_range=(50, 55),
+            text="void run() {}\n",
+            token_estimate=4,
+            confidence=1.0,
+            metadata={"node_name": "run"},
+        ),
+        "src/Foo.java",
+        query_text="src/Foo.java",
+    )
+    external = score_file_candidate(
+        RankingCandidate(
+            kind="neighborhood.callee",
+            file_path="src/Helper.java",
+            line_range=(1, 1),
+            text="void helper() {}\n",
+            token_estimate=4,
+            confidence=1.0,
+            metadata={"edge_id": 1, "edge_kind": "calls", "node_name": "helper"},
+        ),
+        "src/Foo.java",
+        query_text="src/Foo.java",
+    )
+
+    assert symbol.score > external.score
+    assert symbol.score_trace["file_symbol"] == 2.2
+    assert symbol.score_trace["same_file"] == 1.4
+    assert symbol.score_trace["source_proximity"] == 0.0
+    assert external.score_trace["graph_proximity"] == 1.5
 
 
 def test_score_candidate_records_edge_test_confidence_and_token_components() -> None:

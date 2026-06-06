@@ -13,6 +13,7 @@ from codectx.context.selection import (
     compact_large_required_enclosing_candidates,
     is_vendor_path,
     score_candidates,
+    score_file_candidates,
     select_candidates,
     selected_chunk_ids,
 )
@@ -235,11 +236,8 @@ def build_file_context_bundle(
         }
     )
 
-    ranking_anchor = (
-        origin_anchors[0] if origin_anchors else _file_anchor_as_line_anchor(anchor)
-    )
-    required = score_candidates(required, ranking_anchor, resolved_query)
-    optional = score_candidates(optional, ranking_anchor, resolved_query)
+    required = score_file_candidates(required, anchor.file_path, resolved_query)
+    optional = score_file_candidates(optional, anchor.file_path, resolved_query)
     trace.append(
         {
             "stage": "rank",

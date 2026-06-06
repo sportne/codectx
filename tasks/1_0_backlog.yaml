@@ -284,7 +284,7 @@ milestones:
 
       - id: V2-004
         title: Rank and budget file-level bundles without line proximity
-        status: todo
+        status: done
         priority: P1
         type: AFK
         blocked_by: [V2-003]
