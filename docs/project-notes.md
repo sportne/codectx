@@ -18,8 +18,8 @@ clearly.
 
 The 1.0-ready CLI should answer this question well:
 
-> Given a file/line or symbol name, what source-grounded context should a human
-> paste into an LLM to understand or ask about this code?
+> Given a file, file/line, or symbol name, what source-grounded context should a
+> human paste into an LLM to understand or ask about this code?
 
 ## Scope
 

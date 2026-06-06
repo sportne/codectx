@@ -77,6 +77,34 @@ def test_cli_acceptance_commands_on_golden_fixtures(
     assert "# codectx context bundle" in context_output
     assert "- goal: explain" in context_output
 
+    file_path = (
+        "src/main/java/acme/PaymentService.java"
+        if fixture_name == "java_basic"
+        else "src/payment_service.cpp"
+    )
+    assert (
+        main(
+            [
+                "context",
+                "--file",
+                file_path,
+                "--repo",
+                str(repo),
+                "--db",
+                str(db_path),
+                "--goal",
+                "explain",
+                "--format",
+                "markdown",
+            ]
+        )
+        == 0
+    )
+    file_context_output = capsys.readouterr().out
+    assert "# codectx context bundle" in file_context_output
+    assert "- anchor_kind: file" in file_context_output
+    assert "- file: " + file_path in file_context_output
+
     assert (
         main(
             [

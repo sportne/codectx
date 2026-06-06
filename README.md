@@ -4,8 +4,8 @@
 source-grounded context bundles for LLM prompts.
 
 It indexes a repository into a SQLite code graph, then emits Markdown, JSON, or
-plain-text snippets around a symbol or a file/line anchor. It does not call an
-LLM or upload source code.
+plain-text snippets around a file, a file/line anchor, or a symbol. It does not
+call an LLM or upload source code.
 
 ## Quickstart
 
@@ -21,15 +21,23 @@ Index a repository once:
 python dist/codectx.pex index /path/to/repo
 ```
 
-Then ask for context around a line in a file:
+Then ask for context around a file:
 
 ```bash
 python dist/codectx.pex context \
   --repo /path/to/repo \
   --file src/main/java/acme/PaymentService.java \
-  --line 87 \
   --goal explain \
   --format markdown
+```
+
+Add `--line` when you want to narrow the anchor to a specific line:
+
+```bash
+python dist/codectx.pex context \
+  --repo /path/to/repo \
+  --file src/main/java/acme/PaymentService.java \
+  --line 87
 ```
 
 Write the bundle to a file:
@@ -38,7 +46,6 @@ Write the bundle to a file:
 python dist/codectx.pex context \
   --repo /path/to/repo \
   --file src/main/java/acme/PaymentService.java \
-  --line 87 \
   --output /tmp/payment-service-context.md
 ```
 
@@ -48,7 +55,6 @@ Choose how much context to include with `--budget`:
 python dist/codectx.pex context \
   --repo /path/to/repo \
   --file src/main/java/acme/PaymentService.java \
-  --line 87 \
   --budget 12000
 ```
 
@@ -66,7 +72,7 @@ codectx index PATH [--db PATH] [--rebuild]
 codectx health --repo PATH [--db PATH] [--integrity]
 codectx search QUERY --repo PATH [--db PATH]
 codectx symbols QUERY --repo PATH [--db PATH]
-codectx context --repo PATH (--symbol QUERY | --file PATH --line N) [options]
+codectx context --repo PATH (--symbol QUERY | --file PATH [--line N]) [options]
 codectx neighborhood --repo PATH --symbol QUERY [options]
 codectx inspect-node NODE_ID --repo PATH [--db PATH]
 codectx inspect-edge EDGE_ID --repo PATH [--db PATH]
@@ -115,7 +121,10 @@ scripts and regression tests.
 
 ## Caveats
 
-- File context requires `--file PATH --line N`; a bare file path is not enough.
+- File-only context uses symbols in that file as context origins. Symbol-poor
+  files may fall back to file/source context.
+- Use `--line N` with `--file PATH` when you need context around one precise
+  line.
 - Index before generating context, or pass `--db` to use a specific index.
 - Java and C++ extraction is Tree-sitter based and heuristic, not
   compiler-perfect.
