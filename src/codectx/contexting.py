@@ -12,9 +12,8 @@ from codectx.context.anchors import (
     resolve_file_anchor,
     resolve_file_line_anchor,
 )
-from codectx.context.bundle import ContextBundle
 from codectx.context.formatters import format_json, format_markdown, format_text
-from codectx.context.planner import build_context_bundle
+from codectx.context.planner import build_context_bundle, build_file_context_bundle
 from codectx.graph.query import SymbolResult
 from codectx.graph.query import search_symbols as graph_search_symbols
 from codectx.graph.store import GraphStore
@@ -118,12 +117,15 @@ def build_context(
             "line": line,
         }
         if isinstance(anchor, FileAnchorResult):
-            bundle = _build_file_anchor_bundle(
+            bundle = build_file_context_bundle(
+                store.conn,
+                snapshot_id,
+                repo_path,
                 anchor,
                 budget=budget,
-                output_format=output_format,
                 index_health=stats,
                 query=query,
+                uncertainty_notes=uncertainty_notes,
             )
         else:
             bundle = build_context_bundle(
@@ -182,43 +184,6 @@ def _resolve_context_anchor(
     if isinstance(symbol_anchor, ContextingError):
         return symbol_anchor
     return symbol_anchor, matches
-
-
-def _build_file_anchor_bundle(
-    anchor: FileAnchorResult,
-    *,
-    budget: int,
-    output_format: str,
-    index_health: dict[str, str],
-    query: dict[str, Any],
-) -> ContextBundle:
-    return ContextBundle(
-        query=query,
-        anchor={
-            "anchor_kind": "file",
-            "file": anchor.file_path,
-            "file_id": anchor.file_id,
-            "language": anchor.language,
-            "line_count": anchor.line_count,
-            "is_test": anchor.is_test,
-            "is_generated": anchor.is_generated,
-        },
-        index_health=dict(sorted(index_health.items())),
-        items=[],
-        omitted=[],
-        uncertainty_notes=[
-            "File-level context collection from symbols will be added in a later task."
-        ],
-        trace=[
-            {
-                "stage": "anchor",
-                "anchor_kind": "file",
-                "file": anchor.file_path,
-                "budget": budget,
-                "format": output_format,
-            }
-        ],
-    )
 
 
 def _anchor_from_symbol(

@@ -3,9 +3,18 @@ from __future__ import annotations
 from json import loads
 from pathlib import Path
 
-from codectx.context.anchors import AnchorResult, resolve_file_line_anchor
+from codectx.context.anchors import (
+    AnchorResult,
+    FileAnchorResult,
+    resolve_file_anchor,
+    resolve_file_line_anchor,
+)
 from codectx.context.formatters import format_json
-from codectx.context.planner import build_context_bundle, build_explain_bundle
+from codectx.context.planner import (
+    build_context_bundle,
+    build_explain_bundle,
+    build_file_context_bundle,
+)
 from codectx.frontends.base import (
     ChunkFact,
     DiagnosticFact,
@@ -870,6 +879,403 @@ def test_build_call_neighborhood_bundle_prunes_by_budget_after_call_context(
     assert [(omitted.name, omitted.reason) for omitted in bundle.omitted] == [
         ("src/Foo.java:2", "budget")
     ]
+
+
+def test_build_file_context_bundle_uses_symbols_as_origins(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_file_context_graph(store, repo)
+        anchor = resolve_file_anchor(store.conn, snapshot_id, "src/PaymentService.java")
+        assert isinstance(anchor, FileAnchorResult)
+
+        bundle = build_file_context_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=1000,
+            index_health={"files": "2", "nodes": "3"},
+        )
+
+    item_kinds = [item.kind for item in bundle.items]
+    assert item_kinds.count("file.symbol") == 2
+    assert item_kinds.count("neighborhood.callee") == 1
+    assert any("authorize" in item.text for item in bundle.items)
+    assert any("refund" in item.text for item in bundle.items)
+    assert any("Gateway" in item.text for item in bundle.items)
+    assert bundle.anchor["anchor_kind"] == "file"
+    assert bundle.anchor["line_count"] == 8
+    assert any(
+        entry["stage"] == "origins" and entry["count"] == 2 for entry in bundle.trace
+    )
+
+
+def test_build_file_context_bundle_falls_back_when_no_symbols_are_indexed(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_file_without_symbols_graph(store, repo)
+        anchor = resolve_file_anchor(store.conn, snapshot_id, "src/Readme.java")
+        assert isinstance(anchor, FileAnchorResult)
+
+        bundle = build_file_context_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=1000,
+            index_health={"files": "1", "nodes": "0"},
+        )
+
+    assert [item.kind for item in bundle.items] == ["file.fallback"]
+    assert bundle.items[0].text == "read me"
+
+
+def test_build_file_context_bundle_includes_callers_for_call_neighborhood(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_file_context_graph(store, repo)
+        anchor = resolve_file_anchor(store.conn, snapshot_id, "src/PaymentService.java")
+        assert isinstance(anchor, FileAnchorResult)
+
+        bundle = build_file_context_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=1000,
+            index_health={},
+            query={"goal": "call-neighborhood", "budget": 1000},
+        )
+
+    assert any(item.kind == "neighborhood.caller" for item in bundle.items)
+    assert any("Controller" in item.text for item in bundle.items)
+
+
+def test_build_file_context_bundle_collects_origin_diagnostics_for_failure_modes(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_file_context_graph(store, repo)
+        anchor = resolve_file_anchor(store.conn, snapshot_id, "src/PaymentService.java")
+        assert isinstance(anchor, FileAnchorResult)
+
+        bundle = build_file_context_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=1000,
+            index_health={},
+            query={"goal": "failure-modes", "budget": 1000},
+        )
+
+    assert any(item.kind == "diagnostic.parser" for item in bundle.items)
+
+
+def test_build_file_context_bundle_collects_file_diagnostics_without_origins(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_file_without_symbols_graph(
+            store, repo, include_diagnostic=True
+        )
+        anchor = resolve_file_anchor(store.conn, snapshot_id, "src/Readme.java")
+        assert isinstance(anchor, FileAnchorResult)
+
+        bundle = build_file_context_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=1000,
+            index_health={},
+            query={"goal": "failure-modes", "budget": 1000},
+        )
+
+    assert any(item.kind == "diagnostic.parser" for item in bundle.items)
+
+
+def test_build_file_context_bundle_uses_source_fallback_without_chunks(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "graph.sqlite"
+    repo = tmp_path / "repo"
+    with GraphStore(db_path) as store:
+        snapshot_id = _seed_file_without_chunks_graph(store, repo)
+        anchor = resolve_file_anchor(store.conn, snapshot_id, "src/Readme.java")
+        assert isinstance(anchor, FileAnchorResult)
+
+        bundle = build_file_context_bundle(
+            store.conn,
+            snapshot_id,
+            repo,
+            anchor,
+            budget=1000,
+            index_health={"files": "1", "nodes": "0"},
+        )
+
+    assert [item.kind for item in bundle.items] == ["file.fallback"]
+    assert bundle.items[0].text == "line one\nline two\n"
+    assert "source fallback" in bundle.uncertainty_notes[0]
+
+
+def _seed_file_context_graph(store: GraphStore, repo: Path) -> int:
+    source = (
+        "class PaymentService {\n"
+        "  void authorize() { gateway(); }\n"
+        "  void refund() {}\n"
+        "}\n"
+    )
+    gateway_source = "class Gateway { void gateway() {} }\n"
+    controller_source = "class Controller { void submit() { authorize(); } }\n"
+    _write(repo / "src" / "PaymentService.java", source)
+    _write(repo / "src" / "Gateway.java", gateway_source)
+    _write(repo / "src" / "Controller.java", controller_source)
+    store.apply_schema()
+    repo_id = store.create_repo(repo)
+    snapshot_id = store.create_snapshot(repo_id)
+    file_ids = store.insert_files(
+        snapshot_id,
+        [
+            FileRecord(
+                path="src/PaymentService.java",
+                language="java",
+                content_hash="abc123",
+                size_bytes=len(source.encode("utf-8")),
+                line_count=8,
+            ),
+            FileRecord(
+                path="src/Gateway.java",
+                language="java",
+                content_hash="def456",
+                size_bytes=len(gateway_source.encode("utf-8")),
+                line_count=1,
+            ),
+            FileRecord(
+                path="src/Controller.java",
+                language="java",
+                content_hash="ghi789",
+                size_bytes=len(controller_source.encode("utf-8")),
+                line_count=1,
+            ),
+        ],
+    )
+    authorize_key = "java:src/PaymentService.java#PaymentService.authorize()"
+    refund_key = "java:src/PaymentService.java#PaymentService.refund()"
+    gateway_key = "java:src/Gateway.java#Gateway.gateway()"
+    controller_key = "java:src/Controller.java#Controller.submit()"
+    node_ids = store.insert_nodes(
+        snapshot_id,
+        [
+            _java_node(
+                "callable",
+                "authorize",
+                "PaymentService.authorize()",
+                authorize_key,
+                "src/PaymentService.java",
+                2,
+                2,
+            ),
+            _java_node(
+                "callable",
+                "refund",
+                "PaymentService.refund()",
+                refund_key,
+                "src/PaymentService.java",
+                3,
+                3,
+            ),
+            _java_node(
+                "callable",
+                "gateway",
+                "Gateway.gateway()",
+                gateway_key,
+                "src/Gateway.java",
+                1,
+                1,
+            ),
+            _java_node(
+                "callable",
+                "submit",
+                "Controller.submit()",
+                controller_key,
+                "src/Controller.java",
+                1,
+                1,
+            ),
+        ],
+        file_ids,
+    )
+    store.insert_edges(
+        snapshot_id,
+        [
+            _edge("calls", authorize_key, gateway_key, "src/PaymentService.java", 2),
+            _edge("calls", refund_key, gateway_key, "src/PaymentService.java", 3),
+            _edge("calls", controller_key, authorize_key, "src/Controller.java", 1),
+        ],
+        file_ids,
+        node_ids,
+    )
+    store.insert_chunks(
+        [
+            ChunkFact(
+                file_path="src/PaymentService.java",
+                node_key=authorize_key,
+                kind="definition",
+                start_line=2,
+                end_line=2,
+                text="  void authorize() { gateway(); }\n",
+                token_estimate=8,
+            ),
+            ChunkFact(
+                file_path="src/PaymentService.java",
+                node_key=refund_key,
+                kind="definition",
+                start_line=3,
+                end_line=3,
+                text="  void refund() {}\n",
+                token_estimate=5,
+            ),
+            ChunkFact(
+                file_path="src/Gateway.java",
+                node_key=gateway_key,
+                kind="definition",
+                start_line=1,
+                end_line=1,
+                text=gateway_source,
+                token_estimate=8,
+            ),
+            ChunkFact(
+                file_path="src/Controller.java",
+                node_key=controller_key,
+                kind="definition",
+                start_line=1,
+                end_line=1,
+                text=controller_source,
+                token_estimate=10,
+            ),
+        ],
+        file_ids,
+        node_ids,
+    )
+    store.insert_diagnostics(
+        snapshot_id,
+        [
+            DiagnosticFact(
+                file_path="src/PaymentService.java",
+                severity="error",
+                code="parse",
+                message="expected expression",
+                extractor="test",
+                span=SourceSpan(
+                    file_path="src/PaymentService.java",
+                    start_byte=0,
+                    end_byte=10,
+                    start_line=2,
+                    start_col=0,
+                    end_line=2,
+                    end_col=10,
+                ),
+            )
+        ],
+        file_ids,
+    )
+    return snapshot_id
+
+
+def _seed_file_without_symbols_graph(
+    store: GraphStore, repo: Path, *, include_diagnostic: bool = False
+) -> int:
+    source = "read me"
+    _write(repo / "src" / "Readme.java", source)
+    store.apply_schema()
+    repo_id = store.create_repo(repo)
+    snapshot_id = store.create_snapshot(repo_id)
+    file_ids = store.insert_files(
+        snapshot_id,
+        [
+            FileRecord(
+                path="src/Readme.java",
+                language="java",
+                content_hash="abc123",
+                size_bytes=len(source.encode("utf-8")),
+                line_count=1,
+            )
+        ],
+    )
+    store.insert_chunks(
+        [
+            ChunkFact(
+                file_path="src/Readme.java",
+                node_key=None,
+                kind="file",
+                start_line=1,
+                end_line=1,
+                text=source,
+                token_estimate=2,
+            )
+        ],
+        file_ids,
+        {},
+    )
+    if include_diagnostic:
+        store.insert_diagnostics(
+            snapshot_id,
+            [
+                DiagnosticFact(
+                    file_path="src/Readme.java",
+                    severity="error",
+                    code="parse",
+                    message="expected type",
+                    extractor="test",
+                    span=SourceSpan(
+                        file_path="src/Readme.java",
+                        start_byte=0,
+                        end_byte=7,
+                        start_line=1,
+                        start_col=0,
+                        end_line=1,
+                        end_col=7,
+                    ),
+                )
+            ],
+            file_ids,
+        )
+    return snapshot_id
+
+
+def _seed_file_without_chunks_graph(store: GraphStore, repo: Path) -> int:
+    source = "line one\nline two\n"
+    _write(repo / "src" / "Readme.java", source)
+    store.apply_schema()
+    repo_id = store.create_repo(repo)
+    snapshot_id = store.create_snapshot(repo_id)
+    store.insert_files(
+        snapshot_id,
+        [
+            FileRecord(
+                path="src/Readme.java",
+                language="java",
+                content_hash="abc123",
+                size_bytes=len(source.encode("utf-8")),
+                line_count=2,
+            )
+        ],
+    )
+    return snapshot_id
 
 
 def _seed_explain_graph(

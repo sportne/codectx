@@ -265,7 +265,7 @@ milestones:
 
       - id: V2-003
         title: Build file-level context from symbols in the file
-        status: todo
+        status: done
         priority: P1
         type: AFK
         blocked_by: [V2-002]

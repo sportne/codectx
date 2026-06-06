@@ -6,7 +6,7 @@ from json import loads
 from pathlib import Path
 from typing import Any
 
-from codectx.context.anchors import AnchorResult
+from codectx.context.anchors import AnchorResult, FileAnchorResult
 from codectx.context.bundle import ContextBundle, ContextItem
 from codectx.context.selection import Candidate as _Candidate
 from codectx.context.selection import (
@@ -157,6 +157,321 @@ def build_explain_bundle(
         query={**resolved_query, "goal": "explain"},
         uncertainty_notes=uncertainty_notes,
     )
+
+
+def build_file_context_bundle(
+    conn: Any,
+    snapshot_id: int,
+    repo: str | Path,
+    anchor: FileAnchorResult,
+    *,
+    budget: int,
+    index_health: dict[str, str],
+    query: dict[str, Any] | None = None,
+    uncertainty_notes: list[str] | None = None,
+) -> ContextBundle:
+    """Build a deterministic context bundle for a file-level anchor."""
+    repo_path = Path(repo)
+    notes = list(uncertainty_notes or [])
+    trace: list[dict[str, Any]] = [
+        {"stage": "anchor", "anchor_kind": "file", "file": anchor.file_path}
+    ]
+    resolved_query = query or {"goal": "explain", "budget": budget}
+    goal = str(resolved_query.get("goal", "explain"))
+    origin_anchors = _file_origin_anchors(conn, anchor)
+    trace.append({"stage": "origins", "count": len(origin_anchors)})
+
+    required: list[_Candidate] = []
+    base_optional = [
+        *_file_symbol_candidates(conn, anchor),
+        *_import_include_candidates(
+            conn, repo_path, _file_anchor_as_line_anchor(anchor)
+        ),
+    ]
+    relationship_candidates: list[_Candidate] = []
+    test_candidates: list[_Candidate] = []
+    diagnostic_candidates: list[_Candidate] = []
+    for origin in origin_anchors:
+        relationship_candidates.extend(
+            _relationship_candidates(conn, repo_path, origin, notes)
+        )
+        if goal == "call-neighborhood":
+            relationship_candidates.extend(
+                _incoming_call_candidates(conn, repo_path, origin, notes)
+            )
+        test_candidates.extend(_test_candidates(conn, origin, selected_chunk_ids([])))
+        if goal == "failure-modes":
+            diagnostic_candidates.extend(
+                _diagnostic_candidates(conn, repo_path, snapshot_id, origin, notes)
+            )
+    if not origin_anchors and goal == "failure-modes":
+        diagnostic_candidates = _diagnostic_candidates(
+            conn,
+            repo_path,
+            snapshot_id,
+            _file_anchor_as_line_anchor(anchor),
+            notes,
+        )
+
+    optional = _dedupe_candidates(
+        [
+            *base_optional,
+            *diagnostic_candidates,
+            *relationship_candidates,
+            *test_candidates,
+        ]
+    )
+    if not optional:
+        fallback = _file_fallback_candidate(conn, repo_path, anchor, notes)
+        if fallback is not None:
+            optional.append(fallback)
+    trace.append(
+        {
+            "stage": "candidates",
+            "optional_count": len(optional),
+            "relationship_count": len(relationship_candidates),
+            "test_count": len(test_candidates),
+            "diagnostic_count": len(diagnostic_candidates),
+        }
+    )
+
+    ranking_anchor = (
+        origin_anchors[0] if origin_anchors else _file_anchor_as_line_anchor(anchor)
+    )
+    required = score_candidates(required, ranking_anchor, resolved_query)
+    optional = score_candidates(optional, ranking_anchor, resolved_query)
+    trace.append(
+        {
+            "stage": "rank",
+            "required_count": len(required),
+            "optional_count": len(optional),
+        }
+    )
+    selected, omitted = select_candidates(required, optional, budget, goal=goal)
+    items = [
+        ContextItem(
+            rank=rank,
+            kind=candidate.kind,
+            file=candidate.file,
+            line_range=candidate.line_range,
+            text=candidate.text,
+            score=candidate.score,
+            token_estimate=candidate.token_estimate,
+            reason=candidate.reason,
+            confidence=candidate.confidence,
+            extractor=candidate.extractor,
+            metadata=candidate.metadata,
+            score_trace=candidate.score_trace,
+        )
+        for rank, candidate in enumerate(selected, start=1)
+    ]
+
+    return ContextBundle(
+        query=resolved_query,
+        anchor=_file_anchor_dict(anchor),
+        index_health=dict(sorted(index_health.items())),
+        items=items,
+        omitted=omitted,
+        uncertainty_notes=notes,
+        trace=trace,
+    )
+
+
+def _file_origin_anchors(conn: Any, anchor: FileAnchorResult) -> list[AnchorResult]:
+    rows = conn.execute(
+        """
+        SELECT node.id, node.kind, node.name, node.qualified_name, node.symbol_key,
+               node.start_line, node.end_line, chunk.id AS chunk_id,
+               chunk.kind AS chunk_kind, chunk.start_line AS chunk_start_line,
+               chunk.end_line AS chunk_end_line, chunk.text AS chunk_text,
+               chunk.token_estimate AS chunk_token_estimate
+        FROM node
+        LEFT JOIN chunk ON chunk.node_id = node.id
+        WHERE node.file_id = ?
+          AND node.kind IN ('callable', 'type', 'field')
+          AND node.start_line IS NOT NULL
+          AND node.end_line IS NOT NULL
+        ORDER BY
+          CASE node.kind
+            WHEN 'callable' THEN 0
+            WHEN 'type' THEN 1
+            WHEN 'field' THEN 2
+            ELSE 3
+          END ASC,
+          node.start_line ASC,
+          node.id ASC,
+          chunk.start_line ASC,
+          chunk.id ASC
+        """,
+        (anchor.file_id,),
+    ).fetchall()
+    seen_nodes: set[int] = set()
+    origins: list[AnchorResult] = []
+    for row in rows:
+        node_id = int(row["id"])
+        if node_id in seen_nodes:
+            continue
+        seen_nodes.add(node_id)
+        origins.append(
+            AnchorResult(
+                file_id=anchor.file_id,
+                file_path=anchor.file_path,
+                line=int(row["start_line"]),
+                node_id=node_id,
+                node_kind=str(row["kind"]),
+                node_name=None if row["name"] is None else str(row["name"]),
+                qualified_name=(
+                    None
+                    if row["qualified_name"] is None
+                    else str(row["qualified_name"])
+                ),
+                symbol_key=(
+                    None if row["symbol_key"] is None else str(row["symbol_key"])
+                ),
+                start_line=int(row["start_line"]),
+                end_line=int(row["end_line"]),
+                chunk_id=None if row["chunk_id"] is None else int(row["chunk_id"]),
+                chunk_kind=None
+                if row["chunk_kind"] is None
+                else str(row["chunk_kind"]),
+                chunk_start_line=None
+                if row["chunk_start_line"] is None
+                else int(row["chunk_start_line"]),
+                chunk_end_line=None
+                if row["chunk_end_line"] is None
+                else int(row["chunk_end_line"]),
+                chunk_text=None
+                if row["chunk_text"] is None
+                else str(row["chunk_text"]),
+                chunk_token_estimate=None
+                if row["chunk_token_estimate"] is None
+                else int(row["chunk_token_estimate"]),
+            )
+        )
+    return origins
+
+
+def _file_symbol_candidates(conn: Any, anchor: FileAnchorResult) -> list[_Candidate]:
+    rows = conn.execute(
+        """
+        SELECT chunk.id, chunk.node_id, chunk.kind, chunk.start_line, chunk.end_line,
+               chunk.text, chunk.token_estimate, node.kind AS node_kind,
+               node.name AS node_name, node.qualified_name, node.symbol_key,
+               node.confidence, node.extractor, file.path AS file_path
+        FROM chunk
+        JOIN file ON file.id = chunk.file_id
+        LEFT JOIN node ON node.id = chunk.node_id
+        WHERE chunk.file_id = ?
+          AND node.kind IN ('callable', 'type', 'field')
+        ORDER BY
+          CASE node.kind
+            WHEN 'callable' THEN 0
+            WHEN 'type' THEN 1
+            WHEN 'field' THEN 2
+            ELSE 3
+          END ASC,
+          chunk.start_line ASC,
+          chunk.id ASC
+        """,
+        (anchor.file_id,),
+    ).fetchall()
+    return [
+        _chunk_candidate(row, "file.symbol", "symbol defined in file", 3.7)
+        for row in rows
+    ]
+
+
+def _file_fallback_candidate(
+    conn: Any,
+    repo: Path,
+    anchor: FileAnchorResult,
+    notes: list[str],
+) -> _Candidate | None:
+    chunk = conn.execute(
+        """
+        SELECT chunk.id, chunk.node_id, chunk.kind, chunk.start_line, chunk.end_line,
+               chunk.text, chunk.token_estimate, NULL AS node_kind,
+               NULL AS node_name, NULL AS qualified_name, NULL AS symbol_key,
+               NULL AS confidence, NULL AS extractor, file.path AS file_path
+        FROM chunk
+        JOIN file ON file.id = chunk.file_id
+        WHERE chunk.file_id = ? AND chunk.node_id IS NULL
+        ORDER BY
+          CASE
+            WHEN chunk.kind = 'file' THEN 0
+            ELSE 1
+          END ASC,
+          chunk.start_line ASC,
+          chunk.id ASC
+        LIMIT 1
+        """,
+        (anchor.file_id,),
+    ).fetchone()
+    if chunk is not None:
+        return _chunk_candidate(chunk, "file.fallback", "file fallback", 2.5)
+
+    snippet = _source_snippet(repo, anchor.file_path, 1, anchor.line_count, notes)
+    if snippet is None:
+        notes.append("File source could not be read for file-level context.")
+        return None
+    notes.append(
+        "File-level context used source fallback because no chunks were indexed."
+    )
+    return _Candidate(
+        kind="file.fallback",
+        file=snippet.file_path,
+        line_range=(snippet.start_line, snippet.end_line),
+        text=snippet.text,
+        score=2.5,
+        token_estimate=snippet.token_estimate,
+        reason="file fallback",
+        confidence=0.5,
+        extractor=None,
+    )
+
+
+def _file_anchor_as_line_anchor(anchor: FileAnchorResult) -> AnchorResult:
+    return AnchorResult(
+        file_id=anchor.file_id,
+        file_path=anchor.file_path,
+        line=1,
+        node_id=None,
+        node_kind=None,
+        node_name=None,
+        qualified_name=None,
+        symbol_key=None,
+        start_line=None,
+        end_line=None,
+        chunk_id=None,
+        chunk_kind=None,
+        chunk_start_line=None,
+        chunk_end_line=None,
+        chunk_text=None,
+        chunk_token_estimate=None,
+    )
+
+
+def _dedupe_candidates(candidates: list[_Candidate]) -> list[_Candidate]:
+    seen: set[tuple[str, object]] = set()
+    deduped: list[_Candidate] = []
+    for candidate in candidates:
+        key = _candidate_identity(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(candidate)
+    return deduped
+
+
+def _candidate_identity(candidate: _Candidate) -> tuple[str, object]:
+    if candidate.metadata.get("chunk_id") is not None:
+        return "chunk", int(candidate.metadata["chunk_id"])
+    if candidate.metadata.get("edge_id") is not None:
+        return "edge", int(candidate.metadata["edge_id"])
+    range_key = (candidate.file, candidate.line_range)
+    if range_key != (None, None):
+        return "range", range_key
+    return "text", (candidate.kind, candidate.text)
 
 
 def _target_candidate(
@@ -985,6 +1300,18 @@ def _anchor_dict(anchor: AnchorResult) -> dict[str, Any]:
         "qualified_name": anchor.qualified_name,
         "symbol_key": anchor.symbol_key,
         "chunk_id": anchor.chunk_id,
+    }
+
+
+def _file_anchor_dict(anchor: FileAnchorResult) -> dict[str, Any]:
+    return {
+        "anchor_kind": "file",
+        "file": anchor.file_path,
+        "file_id": anchor.file_id,
+        "language": anchor.language,
+        "line_count": anchor.line_count,
+        "is_test": anchor.is_test,
+        "is_generated": anchor.is_generated,
     }
 
 
