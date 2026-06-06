@@ -16,6 +16,7 @@ PEX_RESOLVE_FLAGS ?= \
 	--only-binary tree-sitter \
 	--only-binary tree-sitter-cpp \
 	--only-binary tree-sitter-java \
+	--only-binary tree-sitter-matlab \
 	--only-binary tree-sitter-python
 
 .PHONY: \

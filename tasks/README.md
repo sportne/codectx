@@ -151,7 +151,7 @@ Status values: `todo`, `in_progress`, `blocked`, `done`.
 | Task | Name | Status | File |
 | --- | --- | --- | --- |
 | V3-001 | Add Python indexing frontend | done | [v3-001-add-python-indexing-frontend.md](v3-001-add-python-indexing-frontend.md) |
-| V3-002 | Add MATLAB indexing frontend | todo | [v3-002-add-matlab-indexing-frontend.md](v3-002-add-matlab-indexing-frontend.md) |
+| V3-002 | Add MATLAB indexing frontend | done | [v3-002-add-matlab-indexing-frontend.md](v3-002-add-matlab-indexing-frontend.md) |
 | V3-003 | Add Go indexing frontend | todo | [v3-003-add-go-indexing-frontend.md](v3-003-add-go-indexing-frontend.md) |
 | V3-004 | Add Rust indexing frontend | todo | [v3-004-add-rust-indexing-frontend.md](v3-004-add-rust-indexing-frontend.md) |
 | V3-005 | Document and validate expanded language support | todo | [v3-005-document-and-validate-expanded-language-support.md](v3-005-document-and-validate-expanded-language-support.md) |

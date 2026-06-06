@@ -45,6 +45,14 @@ FIXTURE_DIR = Path(__file__).parent / "fixtures"
             4,
             "src/payments/service.py",
         ),
+        (
+            "matlab_basic",
+            "authorize",
+            "PaymentService",
+            "PaymentService.authorize",
+            4,
+            "src/PaymentService.m",
+        ),
     ],
 )
 def test_cli_acceptance_commands_on_golden_fixtures(

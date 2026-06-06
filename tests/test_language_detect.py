@@ -16,6 +16,11 @@ def test_detect_python() -> None:
     assert detect_language("src/service.pyi") == "python"
 
 
+def test_detect_matlab() -> None:
+    assert detect_language("src/authorize.m") == "matlab"
+    assert detect_language("src/notebook.mlx") is None
+
+
 def test_detect_unsupported() -> None:
     assert detect_language("README.md") is None
 

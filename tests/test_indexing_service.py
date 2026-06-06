@@ -67,9 +67,10 @@ def test_run_index_and_read_health_round_trip(tmp_path: Path) -> None:
 def test_default_frontends_register_builtin_languages() -> None:
     frontends = default_frontends()
 
-    assert sorted(frontends) == ["cpp", "java", "python"]
+    assert sorted(frontends) == ["cpp", "java", "matlab", "python"]
     assert frontends["cpp"].language == "cpp"
     assert frontends["java"].language == "java"
+    assert frontends["matlab"].language == "matlab"
     assert frontends["python"].language == "python"
 
 
@@ -211,6 +212,79 @@ def test_run_index_persists_python_graph_facts(tmp_path: Path) -> None:
             "SELECT kind, unresolved_dst FROM edge ORDER BY id"
         ).fetchall()
         assert any(row["kind"] == "imports" for row in edge_rows)
+        assert any(row["kind"] == "calls" for row in edge_rows)
+        assert any(row["kind"] == "contains" for row in edge_rows)
+
+
+def test_run_index_persists_matlab_graph_facts_and_script_chunks(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    _write(
+        repo / "src" / "PaymentService.m",
+        "classdef PaymentService < handle\n"
+        "    properties\n"
+        "        Gateway\n"
+        "    end\n"
+        "    methods\n"
+        "        function ok = authorize(obj, request)\n"
+        "            validate(request);\n"
+        "            ok = obj.Gateway.charge(request);\n"
+        "        end\n"
+        "        function validate(obj, request)\n"
+        "            ok = isempty(request);\n"
+        "        end\n"
+        "    end\n"
+        "end\n",
+    )
+    _write(
+        repo / "scripts" / "run_payment.m",
+        "gateway = PaymentGateway();\n"
+        'request = PaymentRequest("u1", 42);\n'
+        "ok = authorize(request, gateway);\n",
+    )
+    db_path = tmp_path / "graph.sqlite"
+
+    result = run_index(repo, db_path=db_path)
+
+    assert isinstance(result, IndexResult)
+    assert result.stats["files"] == "2"
+    assert result.stats["language.matlab"] == "2"
+    with GraphStore(db_path) as store:
+        rows = store.conn.execute(
+            """
+            SELECT node.kind, node.language, node.name, node.symbol_key, file.path
+            FROM node
+            JOIN file ON file.id = node.file_id
+            ORDER BY node.symbol_key
+            """
+        ).fetchall()
+        symbols = {row["symbol_key"] for row in rows}
+        assert "matlab:src/PaymentService.m#PaymentService" in symbols
+        assert "matlab:src/PaymentService.m#PaymentService.Gateway" in symbols
+        assert (
+            "matlab:src/PaymentService.m#PaymentService.authorize(obj,request)"
+            in symbols
+        )
+        assert (
+            "matlab:src/PaymentService.m#PaymentService.validate(obj,request)"
+            in symbols
+        )
+
+        script_chunk = store.conn.execute(
+            """
+            SELECT chunk.kind, chunk.text
+            FROM chunk
+            JOIN file ON file.id = chunk.file_id
+            WHERE file.path = 'scripts/run_payment.m'
+            """
+        ).fetchone()
+        assert script_chunk["kind"] == "source"
+        assert "authorize(request, gateway)" in script_chunk["text"]
+
+        edge_rows = store.conn.execute(
+            "SELECT kind, unresolved_dst FROM edge ORDER BY id"
+        ).fetchall()
         assert any(row["kind"] == "calls" for row in edge_rows)
         assert any(row["kind"] == "contains" for row in edge_rows)
 

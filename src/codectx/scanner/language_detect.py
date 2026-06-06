@@ -7,6 +7,7 @@ from pathlib import Path
 JAVA_EXTENSIONS = {".java"}
 CPP_EXTENSIONS = {".cpp", ".cc", ".cxx", ".c++", ".hpp", ".hh", ".hxx", ".h++", ".h"}
 PYTHON_EXTENSIONS = {".py", ".pyi"}
+MATLAB_EXTENSIONS = {".m"}
 
 
 def detect_language(path: str | Path) -> str | None:
@@ -18,6 +19,8 @@ def detect_language(path: str | Path) -> str | None:
         return "cpp"
     if suffix in PYTHON_EXTENSIONS:
         return "python"
+    if suffix in MATLAB_EXTENSIONS:
+        return "matlab"
     return None
 
 
