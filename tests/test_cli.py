@@ -221,14 +221,34 @@ def test_neighborhood_command_delegates_to_neighborhood_service(
 def test_context_command_delegates_to_context_service(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    def fake_build_context(*_args, **_kwargs):
+    captured = {}
+
+    def fake_build_context(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
         return ContextResult(rendered_text="context service result")
 
     monkeypatch.setattr("codectx.cli.build_context", fake_build_context)
 
-    assert main(["context", "--symbol", "PaymentService", "--repo", str(tmp_path)]) == 0
+    assert (
+        main(
+            [
+                "context",
+                "--symbol",
+                "PaymentService",
+                "--repo",
+                str(tmp_path),
+                "--max-items",
+                "12",
+            ]
+        )
+        == 0
+    )
 
     assert capsys.readouterr().out == "context service result\n"
+    assert captured["args"] == (tmp_path,)
+    assert captured["kwargs"]["symbol"] == "PaymentService"
+    assert captured["kwargs"]["max_items"] == 12
 
 
 def test_context_command_writes_service_output(

@@ -26,6 +26,7 @@ SUPPORTED_CONTEXT_GOALS = {
     "explain",
     "failure-modes",
 }
+FILE_CONTEXT_DEFAULT_MAX_ITEMS = 40
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,7 @@ def build_context(
     line: int | None = None,
     goal: str = "explain",
     budget: int = 8000,
+    max_items: int | None = None,
     output_format: str = "markdown",
     output_path: str | Path | None = None,
 ) -> ContextResult | ContextingError:
@@ -59,6 +61,7 @@ def build_context(
     error = _validate_request(
         goal=goal,
         budget=budget,
+        max_items=max_items,
         output_format=output_format,
         symbol=symbol,
         file_path=file_path,
@@ -117,23 +120,31 @@ def build_context(
             "line": line,
         }
         if isinstance(anchor, FileAnchorResult):
+            effective_max_items = (
+                FILE_CONTEXT_DEFAULT_MAX_ITEMS if max_items is None else max_items
+            )
+            query["max_items"] = effective_max_items
             bundle = build_file_context_bundle(
                 store.conn,
                 snapshot_id,
                 repo_path,
                 anchor,
                 budget=budget,
+                max_items=effective_max_items,
                 index_health=stats,
                 query=query,
                 uncertainty_notes=uncertainty_notes,
             )
         else:
+            if max_items is not None:
+                query["max_items"] = max_items
             bundle = build_context_bundle(
                 store.conn,
                 snapshot_id,
                 repo_path,
                 anchor,
                 budget=budget,
+                max_items=max_items,
                 index_health=stats,
                 query=query,
                 uncertainty_notes=uncertainty_notes,
@@ -254,6 +265,7 @@ def _validate_request(
     *,
     goal: str,
     budget: int,
+    max_items: int | None,
     output_format: str,
     symbol: str | None,
     file_path: str | Path | None,
@@ -266,6 +278,8 @@ def _validate_request(
         return ContextingError(f"Unsupported context format: {output_format}")
     if budget <= 0:
         return ContextingError("Context budget must be greater than 0.")
+    if max_items is not None and max_items <= 0:
+        return ContextingError("Context max-items must be greater than 0.")
     if symbol is None and file_path is None:
         return ContextingError("Provide either --symbol or --file for context.")
     if symbol is not None and file_path is not None:

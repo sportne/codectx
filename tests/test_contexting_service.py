@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from json import loads
 from pathlib import Path
 
 from codectx.contexting import ContextingError, ContextResult, build_context
@@ -50,6 +51,27 @@ def test_build_context_returns_bundle_for_file_only_anchor(tmp_path: Path) -> No
     assert '"language": "java"' in result.rendered_text
     assert '"line": null' in result.rendered_text
     assert '"line_count": 3' in result.rendered_text
+    assert loads(result.rendered_text)["query"]["max_items"] == 40
+
+
+def test_build_context_accepts_max_items_for_file_only_anchor(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    db_path = tmp_path / "graph.sqlite"
+    with GraphStore(db_path) as store:
+        _seed_context_graph(store, repo)
+
+    result = build_context(
+        repo,
+        db_path=db_path,
+        file_path="src/Foo.java",
+        max_items=1,
+        output_format="json",
+    )
+
+    assert isinstance(result, ContextResult)
+    rendered = loads(result.rendered_text)
+    assert rendered["query"]["max_items"] == 1
+    assert len(rendered["items"]) == 1
 
 
 def test_build_context_resolves_absolute_file_only_anchor_inside_repo(
@@ -87,6 +109,7 @@ def test_build_context_returns_json_and_text_for_symbol_anchor(tmp_path: Path) -
 
     assert isinstance(json_result, ContextResult)
     assert '"goal": "explain"' in json_result.rendered_text
+    assert "max_items" not in loads(json_result.rendered_text)["query"]
     assert isinstance(text_result, ContextResult)
     assert text_result.rendered_text.startswith("codectx context bundle\n")
 
@@ -126,6 +149,7 @@ def test_build_context_validates_goal_format_and_budget(tmp_path: Path) -> None:
     bad_goal = build_context(repo, symbol="PaymentService", goal="unknown")
     bad_format = build_context(repo, symbol="PaymentService", output_format="unknown")
     bad_budget = build_context(repo, symbol="PaymentService", budget=0)
+    bad_max_items = build_context(repo, symbol="PaymentService", max_items=0)
 
     assert isinstance(bad_goal, ContextingError)
     assert "Unsupported context goal" in bad_goal.message
@@ -133,6 +157,8 @@ def test_build_context_validates_goal_format_and_budget(tmp_path: Path) -> None:
     assert "Unsupported context format" in bad_format.message
     assert isinstance(bad_budget, ContextingError)
     assert "budget" in bad_budget.message
+    assert isinstance(bad_max_items, ContextingError)
+    assert "max-items" in bad_max_items.message
 
 
 def test_build_context_validates_anchor_shape(tmp_path: Path) -> None:

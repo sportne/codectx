@@ -98,6 +98,10 @@ artifact:
 artifact-smoke: artifact
 	"$(PYTHON)" "$(ARTIFACT)" --version
 	"$(PYTHON)" "$(ARTIFACT)" --help >/dev/null
+	tmp_dir="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmp_dir"' EXIT; \
+	"$(PYTHON)" "$(ARTIFACT)" index tests/fixtures/java_basic --db "$$tmp_dir/graph.sqlite" --rebuild >/dev/null; \
+	"$(PYTHON)" "$(ARTIFACT)" context --repo tests/fixtures/java_basic --db "$$tmp_dir/graph.sqlite" --file src/main/java/acme/PaymentService.java --goal explain --budget 1000 --format json >/dev/null
 
 release-ci: ci package-smoke artifact-smoke
 

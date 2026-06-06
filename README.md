@@ -12,19 +12,22 @@ call an LLM or upload source code.
 Get the PEX artifact, then verify it runs:
 
 ```bash
-python dist/codectx.pex --version
+./dist/codectx.pex --version
 ```
+
+You can also run it as `python3 dist/codectx.pex ...` if direct execution is
+not convenient.
 
 Index a repository once:
 
 ```bash
-python dist/codectx.pex index /path/to/repo
+./dist/codectx.pex index /path/to/repo
 ```
 
 Then ask for context around a file:
 
 ```bash
-python dist/codectx.pex context \
+./dist/codectx.pex context \
   --repo /path/to/repo \
   --file src/main/java/acme/PaymentService.java \
   --goal explain \
@@ -34,7 +37,7 @@ python dist/codectx.pex context \
 Add `--line` when you want to narrow the anchor to a specific line:
 
 ```bash
-python dist/codectx.pex context \
+./dist/codectx.pex context \
   --repo /path/to/repo \
   --file src/main/java/acme/PaymentService.java \
   --line 87
@@ -43,7 +46,7 @@ python dist/codectx.pex context \
 Write the bundle to a file:
 
 ```bash
-python dist/codectx.pex context \
+./dist/codectx.pex context \
   --repo /path/to/repo \
   --file src/main/java/acme/PaymentService.java \
   --output /tmp/payment-service-context.md
@@ -52,17 +55,26 @@ python dist/codectx.pex context \
 Choose how much context to include with `--budget`:
 
 ```bash
-python dist/codectx.pex context \
+./dist/codectx.pex context \
   --repo /path/to/repo \
   --file src/main/java/acme/PaymentService.java \
   --budget 12000
 ```
 
+Limit the number of rendered context items with `--max-items`:
+
+```bash
+./dist/codectx.pex context \
+  --repo /path/to/repo \
+  --file src/main/java/acme/PaymentService.java \
+  --max-items 20
+```
+
 If you prefer to start from a symbol:
 
 ```bash
-python dist/codectx.pex symbols PaymentService --repo /path/to/repo
-python dist/codectx.pex context --repo /path/to/repo --symbol PaymentService.authorize
+./dist/codectx.pex symbols PaymentService --repo /path/to/repo
+./dist/codectx.pex context --repo /path/to/repo --symbol PaymentService.authorize
 ```
 
 ## Commands
@@ -83,6 +95,7 @@ Common `context` options:
 ```bash
 --goal explain|failure-modes|dependencies|call-neighborhood
 --budget N
+--max-items N
 --format markdown|json|text
 --output PATH
 ```
@@ -100,7 +113,7 @@ directories, and stores its default database at:
 Use scan filters when needed:
 
 ```bash
-python dist/codectx.pex index /path/to/repo \
+./dist/codectx.pex index /path/to/repo \
   --include "src/**" \
   --exclude "third_party/**" \
   --rebuild

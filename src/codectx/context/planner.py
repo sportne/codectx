@@ -7,9 +7,10 @@ from pathlib import Path
 from typing import Any
 
 from codectx.context.anchors import AnchorResult, FileAnchorResult
-from codectx.context.bundle import ContextBundle, ContextItem
+from codectx.context.bundle import ContextBundle, ContextItem, OmittedItem
 from codectx.context.selection import Candidate as _Candidate
 from codectx.context.selection import (
+    candidate_name,
     compact_large_required_enclosing_candidates,
     is_vendor_path,
     score_candidates,
@@ -21,6 +22,12 @@ from codectx.source.decoding import validate_source_bytes
 from codectx.source.snippets import snippet_by_line_range
 from codectx.source.tokens import estimate_token_count
 
+FILE_SYMBOL_SNIPPET_LIMIT = 8
+FILE_TESTS_PER_ORIGIN_LIMIT = 2
+LOW_VALUE_UNRESOLVED_RECEIVERS = frozenset(
+    {"(*this)", "other", "self", "this", "values_"}
+)
+
 
 def build_context_bundle(
     conn: Any,
@@ -29,6 +36,7 @@ def build_context_bundle(
     anchor: AnchorResult,
     *,
     budget: int,
+    max_items: int | None = None,
     index_health: dict[str, str],
     query: dict[str, Any] | None = None,
     uncertainty_notes: list[str] | None = None,
@@ -105,6 +113,7 @@ def build_context_bundle(
         optional_candidates,
         budget,
         goal=goal,
+        max_items=max_items,
     )
     items = [
         ContextItem(
@@ -130,7 +139,7 @@ def build_context_bundle(
         index_health=dict(sorted(index_health.items())),
         items=items,
         omitted=omitted,
-        uncertainty_notes=notes,
+        uncertainty_notes=_clean_uncertainty_notes(notes),
         trace=trace,
     )
 
@@ -142,6 +151,7 @@ def build_explain_bundle(
     anchor: AnchorResult,
     *,
     budget: int,
+    max_items: int | None = None,
     index_health: dict[str, str],
     query: dict[str, Any] | None = None,
     uncertainty_notes: list[str] | None = None,
@@ -154,6 +164,7 @@ def build_explain_bundle(
         repo,
         anchor,
         budget=budget,
+        max_items=max_items,
         index_health=index_health,
         query={**resolved_query, "goal": "explain"},
         uncertainty_notes=uncertainty_notes,
@@ -167,6 +178,7 @@ def build_file_context_bundle(
     anchor: FileAnchorResult,
     *,
     budget: int,
+    max_items: int | None = None,
     index_health: dict[str, str],
     query: dict[str, Any] | None = None,
     uncertainty_notes: list[str] | None = None,
@@ -182,7 +194,7 @@ def build_file_context_bundle(
     origin_anchors = _file_origin_anchors(conn, anchor)
     trace.append({"stage": "origins", "count": len(origin_anchors)})
 
-    required: list[_Candidate] = []
+    required = _file_outline_candidates(anchor, origin_anchors)
     base_optional = [
         *_file_symbol_candidates(conn, anchor),
         *_import_include_candidates(
@@ -200,7 +212,11 @@ def build_file_context_bundle(
             relationship_candidates.extend(
                 _incoming_call_candidates(conn, repo_path, origin, notes)
             )
-        test_candidates.extend(_test_candidates(conn, origin, selected_chunk_ids([])))
+        test_candidates.extend(
+            _test_candidates(conn, origin, selected_chunk_ids([]))[
+                :FILE_TESTS_PER_ORIGIN_LIMIT
+            ]
+        )
         if goal == "failure-modes":
             diagnostic_candidates.extend(
                 _diagnostic_candidates(conn, repo_path, snapshot_id, origin, notes)
@@ -238,6 +254,9 @@ def build_file_context_bundle(
 
     required = score_file_candidates(required, anchor.file_path, resolved_query)
     optional = score_file_candidates(optional, anchor.file_path, resolved_query)
+    optional, symbol_cap_omitted = _cap_file_symbol_candidates(
+        optional, FILE_SYMBOL_SNIPPET_LIMIT
+    )
     trace.append(
         {
             "stage": "rank",
@@ -245,7 +264,10 @@ def build_file_context_bundle(
             "optional_count": len(optional),
         }
     )
-    selected, omitted = select_candidates(required, optional, budget, goal=goal)
+    selected, omitted = select_candidates(
+        required, optional, budget, goal=goal, max_items=max_items
+    )
+    omitted = [*symbol_cap_omitted, *omitted]
     items = [
         ContextItem(
             rank=rank,
@@ -270,9 +292,134 @@ def build_file_context_bundle(
         index_health=dict(sorted(index_health.items())),
         items=items,
         omitted=omitted,
-        uncertainty_notes=notes,
+        uncertainty_notes=_clean_uncertainty_notes(notes),
         trace=trace,
     )
+
+
+def _file_outline_candidates(
+    anchor: FileAnchorResult, origins: list[AnchorResult]
+) -> list[_Candidate]:
+    if not origins:
+        return []
+    sorted_origins = sorted(
+        origins,
+        key=lambda origin: (
+            origin.start_line or 0,
+            origin.end_line or 0,
+            origin.node_name or "",
+        ),
+    )
+    lines = [f"Symbols in {anchor.file_path}:"]
+    for origin in sorted_origins:
+        start = origin.start_line or origin.line
+        end = origin.end_line or start
+        line_label = f"line {start}" if start == end else f"lines {start}-{end}"
+        name = origin.qualified_name or origin.node_name or "<unnamed>"
+        kind = origin.node_kind or "symbol"
+        lines.append(f"- {kind} {name}: {line_label}")
+    text = "\n".join(lines) + "\n"
+    return [
+        _Candidate(
+            kind="file.outline",
+            file=anchor.file_path,
+            line_range=None,
+            text=text,
+            score=4.5,
+            token_estimate=estimate_token_count(text),
+            reason="symbols defined in file",
+            confidence=0.7,
+            extractor=None,
+            required=True,
+            metadata={"symbol_count": len(origins)},
+        )
+    ]
+
+
+def _cap_file_symbol_candidates(
+    candidates: list[_Candidate], limit: int
+) -> tuple[list[_Candidate], list[OmittedItem]]:
+    kept: list[_Candidate] = []
+    omitted: list[OmittedItem] = []
+    file_symbol_count = 0
+    for candidate in candidates:
+        if candidate.kind != "file.symbol":
+            kept.append(candidate)
+            continue
+        file_symbol_count += 1
+        if file_symbol_count <= limit:
+            kept.append(candidate)
+            continue
+        omitted.append(
+            OmittedItem(
+                name=candidate_name(candidate),
+                reason="max-items",
+                score=candidate.score,
+            )
+        )
+    return kept, omitted
+
+
+def _clean_uncertainty_notes(notes: list[str]) -> list[str]:
+    unresolved: dict[tuple[str, str], int] = {}
+    first_index: dict[tuple[str, str], int] = {}
+    passthrough: list[tuple[int, str]] = []
+    for index, note in enumerate(notes):
+        parsed = _parse_unresolved_note(note)
+        if parsed is None:
+            passthrough.append((index, note))
+            continue
+        kind, target = parsed
+        if _is_low_value_unresolved_target(target):
+            continue
+        key = (kind, target)
+        unresolved[key] = unresolved.get(key, 0) + 1
+        first_index.setdefault(key, index)
+
+    grouped = []
+    for key, count in unresolved.items():
+        if _is_repeated_accessor_noise(key[1], count):
+            continue
+        grouped.append(
+            (
+                first_index[key],
+                f"unresolved {key[0]}: {key[1]}"
+                if count == 1
+                else f"unresolved {key[0]}: {key[1]} ({count} occurrences)",
+            )
+        )
+    return [
+        note for _, note in sorted([*passthrough, *grouped], key=lambda item: item[0])
+    ]
+
+
+def _parse_unresolved_note(note: str) -> tuple[str, str] | None:
+    prefix = "Unresolved "
+    separator = " relationship from target: "
+    if not note.startswith(prefix) or separator not in note:
+        return None
+    kind, target = note[len(prefix) :].split(separator, 1)
+    target = " ".join(target.strip().split())
+    if target.endswith("."):
+        target = target[:-1]
+    if not kind or not target:
+        return None
+    return kind, target
+
+
+def _is_low_value_unresolved_target(target: str) -> bool:
+    normalized = target.strip()
+    if normalized in LOW_VALUE_UNRESOLVED_RECEIVERS:
+        return True
+    receiver = normalized.split(".", 1)[0]
+    return receiver in LOW_VALUE_UNRESOLVED_RECEIVERS
+
+
+def _is_repeated_accessor_noise(target: str, count: int) -> bool:
+    if count < 2 or "." not in target or ":" in target or "->" in target:
+        return False
+    accessor = target.rsplit(".", 1)[1]
+    return accessor in {"empty", "has_value", "size", "value", "x", "y", "z"}
 
 
 def _file_origin_anchors(conn: Any, anchor: FileAnchorResult) -> list[AnchorResult]:

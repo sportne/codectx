@@ -11,6 +11,7 @@ from codectx.context.anchors import (
 )
 from codectx.context.formatters import format_json
 from codectx.context.planner import (
+    _clean_uncertainty_notes,
     build_context_bundle,
     build_explain_bundle,
     build_file_context_bundle,
@@ -25,6 +26,24 @@ from codectx.frontends.base import (
 from codectx.graph.store import GraphStore
 from codectx.scanner.models import FileRecord
 from codectx.source.spans import SourceSpan
+
+
+def test_clean_uncertainty_notes_groups_duplicates_and_suppresses_local_noise() -> None:
+    assert _clean_uncertainty_notes(
+        [
+            "Unresolved calls relationship from target: lines.add.",
+            "Unresolved calls relationship from target: values_.size.",
+            "Unresolved calls relationship from target: lines.add.",
+            "Unresolved calls relationship from target: vector.x.",
+            "Unresolved calls relationship from target: vector.x.",
+            "Unresolved uses_type relationship from target: Matrix3.",
+            "source fallback used",
+        ]
+    ) == [
+        "unresolved calls: lines.add (2 occurrences)",
+        "unresolved uses_type: Matrix3",
+        "source fallback used",
+    ]
 
 
 def test_build_explain_bundle_includes_target_enclosing_import_and_sibling(
@@ -901,8 +920,11 @@ def test_build_file_context_bundle_uses_symbols_as_origins(
         )
 
     item_kinds = [item.kind for item in bundle.items]
+    assert item_kinds[0] == "file.outline"
     assert item_kinds.count("file.symbol") == 2
     assert item_kinds.count("neighborhood.callee") == 1
+    assert "callable PaymentService.authorize()" in bundle.items[0].text
+    assert "callable PaymentService.refund()" in bundle.items[0].text
     assert any("authorize" in item.text for item in bundle.items)
     assert any("refund" in item.text for item in bundle.items)
     assert any("Gateway" in item.text for item in bundle.items)
@@ -928,13 +950,13 @@ def test_build_file_context_bundle_budgets_large_symbol_sets(
             snapshot_id,
             repo,
             anchor,
-            budget=80,
+            budget=1000,
             index_health={"files": "1", "nodes": "12"},
         )
 
-    assert 0 < len(bundle.items) < 12
-    assert all(item.kind == "file.symbol" for item in bundle.items)
-    assert any(omitted.reason == "budget" for omitted in bundle.omitted)
+    assert bundle.items[0].kind == "file.outline"
+    assert len([item for item in bundle.items if item.kind == "file.symbol"]) == 8
+    assert any(omitted.reason == "max-items" for omitted in bundle.omitted)
 
 
 def test_build_file_context_bundle_omits_overlapping_same_file_symbols(
@@ -956,7 +978,8 @@ def test_build_file_context_bundle_omits_overlapping_same_file_symbols(
             index_health={"files": "1", "nodes": "2"},
         )
 
-    assert [item.metadata.get("node_name") for item in bundle.items] == ["run"]
+    assert [item.kind for item in bundle.items] == ["file.outline", "file.symbol"]
+    assert bundle.items[1].metadata.get("node_name") == "run"
     assert [(omitted.name, omitted.reason) for omitted in bundle.omitted] == [
         ("src/Foo.java:1-3", "overlap")
     ]

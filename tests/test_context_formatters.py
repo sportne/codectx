@@ -199,6 +199,22 @@ def test_format_text_renders_empty_sections() -> None:
     assert "Trace\nNone." in rendered
 
 
+def test_formatters_preserve_grouped_uncertainty_notes() -> None:
+    bundle = ContextBundle(
+        query={"goal": "explain"},
+        anchor={"file": "src/Foo.java"},
+        index_health={},
+        items=[],
+        uncertainty_notes=["unresolved calls: lines.add (18 occurrences)"],
+    )
+
+    assert "- unresolved calls: lines.add (18 occurrences)" in format_markdown(bundle)
+    assert "- unresolved calls: lines.add (18 occurrences)" in format_text(bundle)
+    assert loads(format_json(bundle))["uncertainty_notes"] == [
+        "unresolved calls: lines.add (18 occurrences)"
+    ]
+
+
 def _bundle() -> ContextBundle:
     return ContextBundle(
         query={"goal": "explain", "budget": 100},

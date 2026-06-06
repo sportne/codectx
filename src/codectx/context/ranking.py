@@ -118,11 +118,13 @@ def score_file_candidate(
         "edge_relevance": _edge_relevance(candidate, goal),
         "graph_proximity": _graph_proximity(candidate),
         "source_proximity": 0.0,
+        "file_outline": 4.0 if candidate.kind == "file.outline" else 0.0,
         "file_symbol": 2.2 if candidate.kind == "file.symbol" else 0.0,
         "same_file": 1.4 if candidate.file_path == file_path else 0.0,
         "lexical_match": 1.0 if _has_file_lexical_match(candidate, query_text) else 0.0,
         "enclosing_context": 0.0,
         "test_context": 0.7 if _is_test_context(candidate) else 0.0,
+        "file_anchor_noise": _file_anchor_noise(candidate, goal),
         "confidence": round(0.5 * _clamp(candidate.confidence, 0.0, 1.0), 4),
         "token_cost": -round(0.8 * min(candidate.token_estimate / 1000.0, 1.0), 4),
         "redundancy": 0.0,
@@ -310,6 +312,16 @@ def _dependency_relevance(candidate: RankingCandidate) -> float:
         )
     ):
         return 1.0
+    return 0.0
+
+
+def _file_anchor_noise(candidate: RankingCandidate, goal: str) -> float:
+    if goal != "explain":
+        return 0.0
+    if candidate.kind in {"import", "include"}:
+        return -0.8
+    if candidate.kind == "test.related":
+        return -1.0
     return 0.0
 
 

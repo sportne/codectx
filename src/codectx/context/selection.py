@@ -167,7 +167,12 @@ def score_file_candidates(
 
 
 def select_candidates(
-    required: list[Candidate], optional: list[Candidate], budget: int, *, goal: str
+    required: list[Candidate],
+    optional: list[Candidate],
+    budget: int,
+    *,
+    goal: str,
+    max_items: int | None = None,
 ) -> tuple[list[Candidate], list[OmittedItem]]:
     """Select candidates within a token budget and record omitted candidates."""
     selected = list(required)
@@ -179,6 +184,15 @@ def select_candidates(
     ]
     omitted: list[OmittedItem] = []
     for candidate in sorted(optional, key=lambda item: _budget_sort_key(item, goal)):
+        if max_items is not None and len(selected) >= max_items:
+            omitted.append(
+                OmittedItem(
+                    name=candidate_name(candidate),
+                    reason="max-items",
+                    score=candidate.score,
+                )
+            )
+            continue
         range_key = candidate_range_key(candidate)
         if (
             range_key is not None
@@ -301,11 +315,16 @@ def _compact_text(text: str, token_limit: int) -> str:
 def _budget_sort_key(
     candidate: Candidate, goal: str
 ) -> tuple[float, float, str, int, int]:
+    start_line, end_line = candidate.line_range or (0, 0)
+    if candidate.kind == "file.symbol":
+        node_priority = {"callable": 0.0, "type": 1.0, "field": 2.0}.get(
+            str(candidate.metadata.get("node_kind")), 3.0
+        )
+        return (-10_000.0, node_priority, candidate.file or "", start_line, end_line)
     effective_score = candidate.score
     if goal == "failure-modes" and candidate.kind.startswith("diagnostic."):
         effective_score += -5.0 if candidate.metadata.get("is_vendor") is True else 5.0
     ratio = effective_score / max(candidate.token_estimate, 1)
-    start_line, end_line = candidate.line_range or (0, 0)
     return (-ratio, -effective_score, candidate.file or "", start_line, end_line)
 
 

@@ -18,6 +18,6 @@
   ],
   "uncertainty_notes": [
     "Symbol query matched 3 symbols; selected the top-ranked match.",
-    "Unresolved calls relationship from target: gateway.charge."
+    "unresolved calls: gateway.charge"
   ]
 }

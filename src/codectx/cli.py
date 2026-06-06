@@ -104,6 +104,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="explain",
     )
     p_context.add_argument("--budget", type=int, default=8000)
+    p_context.add_argument("--max-items", type=int, default=None)
     p_context.add_argument(
         "--format", choices=["markdown", "json", "text"], default="markdown"
     )
@@ -222,6 +223,7 @@ def _run_context(args: argparse.Namespace) -> int:
         line=args.line,
         goal=args.goal,
         budget=args.budget,
+        max_items=args.max_items,
         output_format=args.format,
         output_path=args.output,
     )

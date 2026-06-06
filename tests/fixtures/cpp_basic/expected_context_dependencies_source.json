@@ -15,7 +15,7 @@
     {"edge_kind": "calls", "file": "src/payment_service.cpp", "kind": "neighborhood.callee", "line_range": [14, 19], "node_name": "PaymentService::validate", "reason": "direct callee"}
   ],
   "uncertainty_notes": [
-    "Unresolved calls relationship from target: gateway_->charge.",
-    "Unresolved references relationship from target: gateway_."
+    "unresolved calls: gateway_->charge",
+    "unresolved references: gateway_"
   ]
 }
