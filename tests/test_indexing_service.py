@@ -64,12 +64,13 @@ def test_run_index_and_read_health_round_trip(tmp_path: Path) -> None:
     }
 
 
-def test_default_frontends_register_java_and_cpp() -> None:
+def test_default_frontends_register_builtin_languages() -> None:
     frontends = default_frontends()
 
-    assert sorted(frontends) == ["cpp", "java"]
+    assert sorted(frontends) == ["cpp", "java", "python"]
     assert frontends["cpp"].language == "cpp"
     assert frontends["java"].language == "java"
+    assert frontends["python"].language == "python"
 
 
 def test_run_index_applies_scan_filters_to_persisted_files(tmp_path: Path) -> None:
@@ -157,6 +158,61 @@ def test_run_index_persists_java_and_cpp_graph_facts(tmp_path: Path) -> None:
             assert (
                 store.conn.execute("SELECT COUNT(*) FROM chunk_fts").fetchone()[0] > 0
             )
+
+
+def test_run_index_persists_python_graph_facts(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    _write(
+        repo / "src" / "payments" / "service.py",
+        "from payments.gateway import PaymentGateway\n\n"
+        "class PaymentService:\n"
+        "    gateway = None\n\n"
+        "    def authorize(self, request):\n"
+        "        validate(request)\n"
+        "        return self.gateway.charge(request)\n\n"
+        "def validate(request):\n"
+        "    return request is not None\n",
+    )
+    _write(
+        repo / "tests" / "test_service.py",
+        "from payments.service import PaymentService\n\n"
+        "def test_authorize():\n"
+        "    service = PaymentService()\n"
+        "    service.authorize(object())\n",
+    )
+    db_path = tmp_path / "graph.sqlite"
+
+    result = run_index(repo, db_path=db_path)
+
+    assert isinstance(result, IndexResult)
+    assert result.stats["files"] == "2"
+    assert result.stats["language.python"] == "2"
+    assert int(result.stats["nodes"]) >= 5
+    assert int(result.stats["edges"]) >= 5
+    with GraphStore(db_path) as store:
+        rows = store.conn.execute(
+            """
+            SELECT node.kind, node.language, node.name, node.symbol_key, file.path
+            FROM node
+            JOIN file ON file.id = node.file_id
+            ORDER BY node.symbol_key
+            """
+        ).fetchall()
+        symbols = {row["symbol_key"] for row in rows}
+        assert "python:src/payments/service.py#PaymentService" in symbols
+        assert (
+            "python:src/payments/service.py#PaymentService.authorize(self,request)"
+            in symbols
+        )
+        assert "python:src/payments/service.py#PaymentService.gateway" in symbols
+        assert "python:src/payments/service.py#validate(request)" in symbols
+
+        edge_rows = store.conn.execute(
+            "SELECT kind, unresolved_dst FROM edge ORDER BY id"
+        ).fetchall()
+        assert any(row["kind"] == "imports" for row in edge_rows)
+        assert any(row["kind"] == "calls" for row in edge_rows)
+        assert any(row["kind"] == "contains" for row in edge_rows)
 
 
 def test_extraction_cache_round_trips_all_fact_types() -> None:

@@ -6,6 +6,7 @@ from pathlib import Path
 
 JAVA_EXTENSIONS = {".java"}
 CPP_EXTENSIONS = {".cpp", ".cc", ".cxx", ".c++", ".hpp", ".hh", ".hxx", ".h++", ".h"}
+PYTHON_EXTENSIONS = {".py", ".pyi"}
 
 
 def detect_language(path: str | Path) -> str | None:
@@ -15,6 +16,8 @@ def detect_language(path: str | Path) -> str | None:
         return "java"
     if suffix in CPP_EXTENSIONS:
         return "cpp"
+    if suffix in PYTHON_EXTENSIONS:
+        return "python"
     return None
 
 
@@ -29,5 +32,6 @@ def is_likely_test(path: str | Path) -> bool:
         or name.endswith("tests.java")
         or name.endswith("_test.cpp")
         or name.endswith("test.cpp")
+        or name.endswith("_test.py")
         or name.startswith("test_")
     )

@@ -12,10 +12,39 @@ FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
 
 @pytest.mark.parametrize(
-    ("fixture_name", "symbol_query", "search_query", "neighborhood_query"),
+    (
+        "fixture_name",
+        "symbol_query",
+        "search_query",
+        "neighborhood_query",
+        "expected_files",
+        "file_path",
+    ),
     [
-        ("java_basic", "authorize", "PaymentService", "authorize"),
-        ("cpp_basic", "authorize", "PaymentService", "PaymentService::authorize"),
+        (
+            "java_basic",
+            "authorize",
+            "PaymentService",
+            "authorize",
+            4,
+            "src/main/java/acme/PaymentService.java",
+        ),
+        (
+            "cpp_basic",
+            "authorize",
+            "PaymentService",
+            "PaymentService::authorize",
+            4,
+            "src/payment_service.cpp",
+        ),
+        (
+            "python_basic",
+            "authorize",
+            "PaymentService",
+            "PaymentService.authorize",
+            4,
+            "src/payments/service.py",
+        ),
     ],
 )
 def test_cli_acceptance_commands_on_golden_fixtures(
@@ -25,6 +54,8 @@ def test_cli_acceptance_commands_on_golden_fixtures(
     symbol_query: str,
     search_query: str,
     neighborhood_query: str,
+    expected_files: int,
+    file_path: str,
 ) -> None:
     repo = _copy_fixture(fixture_name, tmp_path)
     db_path = tmp_path / f"{fixture_name}.sqlite"
@@ -32,7 +63,7 @@ def test_cli_acceptance_commands_on_golden_fixtures(
     assert main(["index", str(repo), "--db", str(db_path)]) == 0
     index_output = capsys.readouterr().out
     assert f"Indexed {repo.resolve()}" in index_output
-    assert "files: 4" in index_output
+    assert f"files: {expected_files}" in index_output
 
     assert (
         main(["health", "--repo", str(repo), "--db", str(db_path), "--integrity"]) == 0
@@ -77,11 +108,6 @@ def test_cli_acceptance_commands_on_golden_fixtures(
     assert "# codectx context bundle" in context_output
     assert "- goal: explain" in context_output
 
-    file_path = (
-        "src/main/java/acme/PaymentService.java"
-        if fixture_name == "java_basic"
-        else "src/payment_service.cpp"
-    )
     assert (
         main(
             [
