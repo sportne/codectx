@@ -160,4 +160,4 @@ Status values: `todo`, `in_progress`, `blocked`, `done`.
 
 | Task | Name | Status | File |
 | --- | --- | --- | --- |
-| V4-001 | Prepare 1.1.0 release candidate with manual QA | in_progress | [v4-001-prepare-1-1-0-release.md](v4-001-prepare-1-1-0-release.md) |
+| V4-001 | Prepare 1.1.0 release candidate with manual QA | done | [v4-001-prepare-1-1-0-release.md](v4-001-prepare-1-1-0-release.md) |

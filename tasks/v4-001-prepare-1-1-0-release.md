@@ -4,7 +4,7 @@ ID: V4-001
 
 Title: Prepare 1.1.0 release candidate with manual QA
 
-Status: in_progress
+Status: done
 
 Depends on:
 
