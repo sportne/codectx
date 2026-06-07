@@ -155,3 +155,9 @@ Status values: `todo`, `in_progress`, `blocked`, `done`.
 | V3-003 | Add Go indexing frontend | done | [v3-003-add-go-indexing-frontend.md](v3-003-add-go-indexing-frontend.md) |
 | V3-004 | Add Rust indexing frontend | done | [v3-004-add-rust-indexing-frontend.md](v3-004-add-rust-indexing-frontend.md) |
 | V3-005 | Document and validate expanded language support | done | [v3-005-document-and-validate-expanded-language-support.md](v3-005-document-and-validate-expanded-language-support.md) |
+
+## V4 - 1.1 release
+
+| Task | Name | Status | File |
+| --- | --- | --- | --- |
+| V4-001 | Prepare 1.1.0 release candidate with manual QA | in_progress | [v4-001-prepare-1-1-0-release.md](v4-001-prepare-1-1-0-release.md) |
