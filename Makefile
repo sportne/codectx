@@ -102,8 +102,13 @@ artifact-smoke: artifact
 	"$(PYTHON)" "$(ARTIFACT)" --help >/dev/null
 	tmp_dir="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmp_dir"' EXIT; \
+	set -e; \
 	"$(PYTHON)" "$(ARTIFACT)" index tests/fixtures/java_basic --db "$$tmp_dir/graph.sqlite" --rebuild >/dev/null; \
-	"$(PYTHON)" "$(ARTIFACT)" context --repo tests/fixtures/java_basic --db "$$tmp_dir/graph.sqlite" --file src/main/java/acme/PaymentService.java --goal explain --budget 1000 --format json >/dev/null
+	"$(PYTHON)" "$(ARTIFACT)" context --repo tests/fixtures/java_basic --db "$$tmp_dir/graph.sqlite" --file src/main/java/acme/PaymentService.java --goal explain --budget 1000 --format json >/dev/null; \
+	"$(PYTHON)" "$(ARTIFACT)" index tests/fixtures/python_basic --db "$$tmp_dir/python.sqlite" --rebuild >/dev/null; \
+	"$(PYTHON)" "$(ARTIFACT)" context --repo tests/fixtures/python_basic --db "$$tmp_dir/python.sqlite" --file src/payments/service.py --goal explain --budget 1000 --format json >/dev/null; \
+	"$(PYTHON)" "$(ARTIFACT)" index tests/fixtures/matlab_basic --db "$$tmp_dir/matlab.sqlite" --rebuild >/dev/null; \
+	"$(PYTHON)" "$(ARTIFACT)" context --repo tests/fixtures/matlab_basic --db "$$tmp_dir/matlab.sqlite" --file src/PaymentService.m --goal explain --budget 1000 --format json >/dev/null
 
 release-ci: ci package-smoke artifact-smoke
 

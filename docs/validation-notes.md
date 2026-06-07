@@ -53,3 +53,52 @@ No critical crash or data-integrity issue was found during validation. Usability
 - The `failure-modes` goal worked best when failure behavior was local to the target or neighboring methods. It was less useful when global parser diagnostics outranked local failure evidence.
 - C++ call/type resolution remains mostly heuristic on larger real-world code; unresolved notes are honest, but high unresolved counts reduce bundle precision.
 - The scanner/indexer handled both validation repositories without crashing and kept parse failures as diagnostics instead of aborting.
+
+## V3 Python/MATLAB Fixture Validation
+
+Date: 2026-06-06
+
+Scope:
+
+- Python fixture: `tests/fixtures/python_basic`
+- MATLAB fixture: `tests/fixtures/matlab_basic`
+- V3-005 is scoped to Python and MATLAB. Go and Rust remain planned future
+  tasks and are not documented as supported languages.
+
+Validation commands:
+
+```bash
+make ci
+make artifact-smoke
+./dist/codectx.pex index tests/fixtures/python_basic --db /tmp/python.sqlite --rebuild
+./dist/codectx.pex context --repo tests/fixtures/python_basic --db /tmp/python.sqlite --file src/payments/service.py --goal explain --format json
+./dist/codectx.pex index tests/fixtures/matlab_basic --db /tmp/matlab.sqlite --rebuild
+./dist/codectx.pex context --repo tests/fixtures/matlab_basic --db /tmp/matlab.sqlite --file src/PaymentService.m --goal explain --format json
+```
+
+Results:
+
+- Python indexing records `.py`/`.pyi` files, classes, functions, async
+  functions, methods, class fields, imports, unresolved calls, chunks, and
+  parser diagnostics.
+- MATLAB indexing records `.m` files, function definitions, `classdef`
+  classes, methods, properties, import commands, unresolved calls, chunks, and
+  parser diagnostics.
+- MATLAB symbol-poor scripts emit source fallback chunks so file-only context
+  does not return an empty bundle.
+- The PEX artifact smoke now indexes Java, Python, and MATLAB fixtures and
+  verifies file-only `context --file` commands for each.
+
+Representative file-only context bundle results:
+
+| Fixture | Anchor | Items | Leading context | Notes |
+| --- | --- | ---: | --- | --- |
+| Python | `src/payments/service.py` | 8 | `file.outline`, four `file.symbol` entries, imports, related test | Useful overview of service class, validation helper, imports, and test. Unresolved notes were limited to dynamic/runtime calls such as `ValueError` and `PaymentRequest`. |
+| MATLAB | `src/PaymentService.m` | 5 | `file.outline` and four `file.symbol` entries | Useful overview of class, property, constructor, and methods. Unresolved notes honestly captured heuristic calls such as `obj.Gateway.charge`, `isempty`, `error`, and superclass `handle`. |
+
+Known limitations:
+
+- Python dynamic imports, monkeypatching, decorators, metaclasses, and
+  runtime-dispatched calls remain heuristic.
+- MATLAB scripts may rely on file/source fallback when no clear symbols exist.
+- MATLAB `.mlx` files are unsupported.

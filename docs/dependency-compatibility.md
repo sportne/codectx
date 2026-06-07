@@ -13,6 +13,8 @@ stable release.
 | `tree-sitter` | `>=0.25,<0.26` | Runtime compatibility test initializes parsers. |
 | `tree-sitter-java` | `>=0.23,<0.24` | Runtime compatibility test parses minimal Java. |
 | `tree-sitter-cpp` | `>=0.23,<0.24` | Runtime compatibility test parses minimal C++. |
+| `tree-sitter-python` | `>=0.23,<0.24` | Runtime compatibility test parses minimal Python. |
+| `tree-sitter-matlab` | `>=1.3,<1.4` | Runtime compatibility test parses minimal MATLAB. |
 
 ## Upgrade Checklist
 

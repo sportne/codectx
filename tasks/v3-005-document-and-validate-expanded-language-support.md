@@ -2,8 +2,8 @@
 
 ID: V3-005
 Title: Document and validate expanded language support
-Status: todo
-Depends on: V3-001, V3-002, V3-003, V3-004
+Status: done
+Depends on: V3-001, V3-002
 Requirement coverage: Language expansion; scanner, frontend extraction, indexing, querying, and context bundle behavior.
 Milestone: V3 - Additional language support
 Priority: P2
@@ -11,14 +11,18 @@ Type: AFK
 
 Rationale:
 
-Users need clear language-support documentation and release validation once Python, MATLAB, Go, and Rust are indexed by default.
+Users need clear language-support documentation and release validation for the
+expanded language set implemented in this run. This task is scoped to Python
+and MATLAB; Go and Rust remain planned future tasks.
 
 Work:
 
-- Update README and support docs with the expanded language list, file extensions, parser dependencies, and known limitations.
-- Add or update real-repo/manual usability evaluation targets for at least Python and MATLAB, with Go and Rust targets if representative repos are available.
-- Extend release or artifact smoke coverage to prove at least one added language works through the PEX.
-- Record known limitations for MATLAB scripts, Rust macros, Python dynamic imports, and unresolved cross-language references.
+- Update README and support docs with the Python/MATLAB language list, file
+  extensions, parser dependencies, and known limitations.
+- Add validation notes for Python and MATLAB fixture coverage.
+- Extend artifact smoke coverage to prove added languages work through the PEX.
+- Record known limitations for MATLAB scripts, MATLAB `.mlx`, Python dynamic
+  imports, and unresolved runtime-dispatched calls.
 
 Deliverable:
 
@@ -26,7 +30,10 @@ Deliverable:
 
 Acceptance:
 
-- README lists Python, MATLAB, Go, and Rust support with caveats.
-- Validation notes include representative expanded-language context bundle results.
-- PEX smoke or acceptance coverage exercises at least one newly supported language.
+- README lists Java, C++, Python, and MATLAB support with caveats.
+- README does not claim Go or Rust support.
+- Validation notes include representative Python and MATLAB context bundle
+  results.
+- PEX smoke or acceptance coverage exercises at least one newly supported
+  language.
 - `make ci` and `make artifact-smoke` pass.

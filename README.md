@@ -1,6 +1,6 @@
 # codectx
 
-`codectx` is a local CLI for turning Java and C++ repositories into
+`codectx` is a local CLI for turning Java, C++, Python, and MATLAB repositories into
 source-grounded context bundles for LLM prompts.
 
 It indexes a repository into a SQLite code graph, then emits Markdown, JSON, or
@@ -102,9 +102,17 @@ Common `context` options:
 
 ## What Gets Indexed
 
-`codectx` currently supports Java and C++ source/header files. It respects
-`.gitignore` and `.ignore` files by default, skips common generated/cache
-directories, and stores its default database at:
+`codectx` currently supports:
+
+| Language | Extensions |
+| --- | --- |
+| Java | `.java` |
+| C++ | `.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`, `.h++`, `.h` |
+| Python | `.py`, `.pyi` |
+| MATLAB | `.m` |
+
+It respects `.gitignore` and `.ignore` files by default, skips common
+generated/cache directories, and stores its default database at:
 
 ```text
 <repo>/.codectx/graph.sqlite
@@ -139,9 +147,13 @@ scripts and regression tests.
 - Use `--line N` with `--file PATH` when you need context around one precise
   line.
 - Index before generating context, or pass `--db` to use a specific index.
-- Java and C++ extraction is Tree-sitter based and heuristic, not
-  compiler-perfect.
+- Language extraction is Tree-sitter based and heuristic, not compiler-perfect.
 - C++ macros/templates and Java classpath-dependent behavior may be incomplete.
+- Python dynamic imports, monkeypatching, decorators, metaclasses, and
+  runtime-dispatched calls are handled heuristically.
+- MATLAB scripts may rely on file/source fallback when no clear symbols exist.
+  MATLAB `.mlx` notebooks are not supported.
+- Go and Rust are planned future language tasks, not supported languages yet.
 - The SQLite database is a local cache and can be deleted and rebuilt.
 
 ## Development
