@@ -18,7 +18,8 @@ PEX_RESOLVE_FLAGS ?= \
 	--only-binary tree-sitter-go \
 	--only-binary tree-sitter-java \
 	--only-binary tree-sitter-matlab \
-	--only-binary tree-sitter-python
+	--only-binary tree-sitter-python \
+	--only-binary tree-sitter-rust
 
 .PHONY: \
 	help setup-venv install-dev \
@@ -111,7 +112,9 @@ artifact-smoke: artifact
 	"$(PYTHON)" "$(ARTIFACT)" index tests/fixtures/matlab_basic --db "$$tmp_dir/matlab.sqlite" --rebuild >/dev/null; \
 	"$(PYTHON)" "$(ARTIFACT)" context --repo tests/fixtures/matlab_basic --db "$$tmp_dir/matlab.sqlite" --file src/PaymentService.m --goal explain --budget 1000 --format json >/dev/null; \
 	"$(PYTHON)" "$(ARTIFACT)" index tests/fixtures/go_basic --db "$$tmp_dir/go.sqlite" --rebuild >/dev/null; \
-	"$(PYTHON)" "$(ARTIFACT)" context --repo tests/fixtures/go_basic --db "$$tmp_dir/go.sqlite" --file service.go --goal explain --budget 1000 --format json >/dev/null
+	"$(PYTHON)" "$(ARTIFACT)" context --repo tests/fixtures/go_basic --db "$$tmp_dir/go.sqlite" --file service.go --goal explain --budget 1000 --format json >/dev/null; \
+	"$(PYTHON)" "$(ARTIFACT)" index tests/fixtures/rust_basic --db "$$tmp_dir/rust.sqlite" --rebuild >/dev/null; \
+	"$(PYTHON)" "$(ARTIFACT)" context --repo tests/fixtures/rust_basic --db "$$tmp_dir/rust.sqlite" --file src/lib.rs --goal explain --budget 1000 --format json >/dev/null
 
 release-ci: ci package-smoke artifact-smoke
 

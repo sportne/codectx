@@ -9,6 +9,7 @@ CPP_EXTENSIONS = {".cpp", ".cc", ".cxx", ".c++", ".hpp", ".hh", ".hxx", ".h++", 
 PYTHON_EXTENSIONS = {".py", ".pyi"}
 MATLAB_EXTENSIONS = {".m"}
 GO_EXTENSIONS = {".go"}
+RUST_EXTENSIONS = {".rs"}
 
 
 def detect_language(path: str | Path) -> str | None:
@@ -24,6 +25,8 @@ def detect_language(path: str | Path) -> str | None:
         return "matlab"
     if suffix in GO_EXTENSIONS:
         return "go"
+    if suffix in RUST_EXTENSIONS:
+        return "rust"
     return None
 
 
@@ -40,5 +43,6 @@ def is_likely_test(path: str | Path) -> bool:
         or name.endswith("test.cpp")
         or name.endswith("_test.py")
         or name.endswith("_test.go")
+        or name.endswith("_test.rs")
         or name.startswith("test_")
     )

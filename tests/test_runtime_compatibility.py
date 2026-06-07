@@ -7,6 +7,7 @@ from codectx.frontends.go_treesitter import GoTreeSitterFrontend
 from codectx.frontends.java_treesitter import JavaTreeSitterFrontend
 from codectx.frontends.matlab_treesitter import MatlabTreeSitterFrontend
 from codectx.frontends.python_treesitter import PythonTreeSitterFrontend
+from codectx.frontends.rust_treesitter import RustTreeSitterFrontend
 
 
 def test_runtime_dependency_versions_are_in_supported_ranges() -> None:
@@ -18,6 +19,7 @@ def test_runtime_dependency_versions_are_in_supported_ranges() -> None:
     assert _version_tuple("tree-sitter-python")[:2] == (0, 23)
     assert _version_tuple("tree-sitter-matlab")[:2] == (1, 3)
     assert _version_tuple("tree-sitter-go")[:2] == (0, 23)
+    assert _version_tuple("tree-sitter-rust")[:2] == (0, 23)
 
 
 def test_tree_sitter_runtime_packages_parse_minimal_sources() -> None:
@@ -36,6 +38,9 @@ def test_tree_sitter_runtime_packages_parse_minimal_sources() -> None:
     go_facts = GoTreeSitterFrontend().extract(
         "src/service.go", b"package service\n\nfunc Run() int { return 1 }\n"
     )
+    rust_facts = RustTreeSitterFrontend().extract(
+        "src/lib.rs", b"pub struct Service;\nimpl Service { pub fn run(&self) {} }\n"
+    )
 
     assert not java_facts.diagnostics
     assert any(node.name == "Foo" for node in java_facts.nodes)
@@ -47,6 +52,8 @@ def test_tree_sitter_runtime_packages_parse_minimal_sources() -> None:
     assert any(node.name == "run" for node in matlab_facts.nodes)
     assert not go_facts.diagnostics
     assert any(node.name == "Run" for node in go_facts.nodes)
+    assert not rust_facts.diagnostics
+    assert any(node.name == "Service" for node in rust_facts.nodes)
 
 
 def _version_tuple(distribution: str) -> tuple[int, ...]:

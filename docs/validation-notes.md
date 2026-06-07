@@ -62,8 +62,8 @@ Scope:
 
 - Python fixture: `tests/fixtures/python_basic`
 - MATLAB fixture: `tests/fixtures/matlab_basic`
-- V3-005 is scoped to Python and MATLAB. Go and Rust remain planned future
-  tasks and are not documented as supported languages.
+- V3-005 originally documented Python and MATLAB. Go and Rust were completed
+  later by V3-003 and V3-004 and are now documented as supported languages.
 
 Validation commands:
 
@@ -134,4 +134,37 @@ Results:
 Known limitations:
 
 - Go module/package resolution, interface dispatch, and external package calls
+  remain heuristic.
+
+## V3 Rust Fixture Validation
+
+Date: 2026-06-07
+
+Scope:
+
+- Rust fixture: `tests/fixtures/rust_basic`
+
+Validation commands:
+
+```bash
+make ci
+make artifact-smoke
+./dist/codectx.pex index tests/fixtures/rust_basic --db /tmp/rust.sqlite --rebuild
+./dist/codectx.pex context --repo tests/fixtures/rust_basic --db /tmp/rust.sqlite --file src/lib.rs --goal explain --format json
+```
+
+Results:
+
+- Rust indexing records `.rs` files, modules, `use` items, structs, enums,
+  traits, type aliases, fields/variants, free functions, impl methods, type
+  references, unresolved calls, macro invocations, chunks, and parser
+  diagnostics.
+- Rust `*_test.rs` files and files under `tests/` are marked as tests and can
+  contribute related context.
+- The PEX artifact smoke indexes the Rust fixture and verifies file-only
+  `context --file src/lib.rs`.
+
+Known limitations:
+
+- Rust macro expansion, trait resolution, generics, and module/crate resolution
   remain heuristic.

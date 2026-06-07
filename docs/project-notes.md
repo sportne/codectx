@@ -6,7 +6,7 @@ verbose for the top-level README.
 ## Project Definition
 
 `codectx` is a local, Python-based code-context packaging tool that indexes
-Java, C++, Python, MATLAB, and Go repositories into a SQLite-backed graph and emits
+Java, C++, Python, MATLAB, Go, and Rust repositories into a SQLite-backed graph and emits
 provenance-aware Markdown, JSON, and plain-text context bundles for manual LLM
 use.
 
@@ -29,7 +29,7 @@ Included:
 - local-only operation
 - Python implementation
 - SQLite-backed graph store
-- Tree-sitter based extraction for Java, C++, Python, MATLAB, and Go
+- Tree-sitter based extraction for Java, C++, Python, MATLAB, Go, and Rust
 - source file indexing, hashing, line offsets, and snippet extraction
 - generic polyglot graph model for files, symbols, spans, occurrences, edges,
   and chunks
@@ -55,7 +55,7 @@ Excluded from 1.0:
    or parser outputs.
 2. **Source-grounded:** every useful graph fact should point back to files,
    spans, snippets, and provenance.
-3. **Polyglot-first:** Java, C++, Python, MATLAB, and Go are first-class, but the
+3. **Polyglot-first:** Java, C++, Python, MATLAB, Go, and Rust are first-class, but the
    core graph avoids language-specific assumptions.
 4. **Local-first:** no service dependencies are required.
 5. **Manual-transfer friendly:** Markdown and plain text are first-class
@@ -69,7 +69,8 @@ Excluded from 1.0:
 
 `codectx` supports Python 3.11 and 3.12 for 1.0 readiness. Runtime dependency
 ranges for `pathspec`, `tree-sitter`, `tree-sitter-java`, `tree-sitter-cpp`,
-`tree-sitter-python`, `tree-sitter-matlab`, and `tree-sitter-go` are bounded in `pyproject.toml` and documented in
+`tree-sitter-python`, `tree-sitter-matlab`, `tree-sitter-go`, and
+`tree-sitter-rust` are bounded in `pyproject.toml` and documented in
 [`dependency-compatibility.md`](dependency-compatibility.md).
 
 ## Related Docs

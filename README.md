@@ -1,6 +1,6 @@
 # codectx
 
-`codectx` is a local CLI for turning Java, C++, Python, MATLAB, and Go repositories into
+`codectx` is a local CLI for turning Java, C++, Python, MATLAB, Go, and Rust repositories into
 source-grounded context bundles for LLM prompts.
 
 It indexes a repository into a SQLite code graph, then emits Markdown, JSON, or
@@ -111,6 +111,7 @@ Common `context` options:
 | Python | `.py`, `.pyi` |
 | MATLAB | `.m` |
 | Go | `.go` |
+| Rust | `.rs` |
 
 It respects `.gitignore` and `.ignore` files by default, skips common
 generated/cache directories, and stores its default database at:
@@ -155,7 +156,8 @@ scripts and regression tests.
 - MATLAB scripts may rely on file/source fallback when no clear symbols exist.
   MATLAB `.mlx` notebooks are not supported.
 - Go module/package resolution and interface dispatch are heuristic.
-- Rust is a planned future language task, not a supported language yet.
+- Rust macro expansion, trait resolution, generics, and module/crate resolution
+  are heuristic.
 - The SQLite database is a local cache and can be deleted and rebuilt.
 
 ## Development

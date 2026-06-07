@@ -67,12 +67,13 @@ def test_run_index_and_read_health_round_trip(tmp_path: Path) -> None:
 def test_default_frontends_register_builtin_languages() -> None:
     frontends = default_frontends()
 
-    assert sorted(frontends) == ["cpp", "go", "java", "matlab", "python"]
+    assert sorted(frontends) == ["cpp", "go", "java", "matlab", "python", "rust"]
     assert frontends["cpp"].language == "cpp"
     assert frontends["go"].language == "go"
     assert frontends["java"].language == "java"
     assert frontends["matlab"].language == "matlab"
     assert frontends["python"].language == "python"
+    assert frontends["rust"].language == "rust"
 
 
 def test_run_index_applies_scan_filters_to_persisted_files(tmp_path: Path) -> None:
@@ -339,6 +340,71 @@ def test_run_index_persists_go_graph_facts(tmp_path: Path) -> None:
             in symbols
         )
         assert "go:service.go#PaymentService.validate(PaymentRequest)" in symbols
+
+        edge_rows = store.conn.execute(
+            "SELECT kind, unresolved_dst FROM edge ORDER BY id"
+        ).fetchall()
+        assert any(row["kind"] == "imports" for row in edge_rows)
+        assert any(row["kind"] == "calls" for row in edge_rows)
+        assert any(row["kind"] == "contains" for row in edge_rows)
+
+
+def test_run_index_persists_rust_graph_facts(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    _write(
+        repo / "src" / "lib.rs",
+        "pub mod gateway;\n"
+        "use crate::gateway::{Gateway, Receipt};\n\n"
+        "pub struct PaymentService { gateway: Gateway }\n"
+        "pub enum PaymentError { InvalidAmount }\n"
+        "pub trait Authorizer { fn authorize(&self, request: PaymentRequest) -> Result<Receipt, PaymentError>; }\n"
+        "pub struct PaymentRequest { amount: u32 }\n"
+        "impl PaymentService {\n"
+        "    pub fn authorize(&self, request: PaymentRequest) -> Result<Receipt, PaymentError> {\n"
+        "        self.validate(&request);\n"
+        "        charge_gateway(&self.gateway, request)\n"
+        "    }\n"
+        "    fn validate(&self, request: &PaymentRequest) {}\n"
+        "}\n"
+        "fn charge_gateway(gateway: &Gateway, request: PaymentRequest) -> Result<Receipt, PaymentError> { todo!() }\n",
+    )
+    _write(
+        repo / "tests" / "service_test.rs",
+        "use payments::PaymentService;\n\n"
+        "#[test]\n"
+        "fn authorize_accepts_positive_amount() {\n"
+        "    let service = PaymentService::new();\n"
+        "    service.authorize();\n"
+        "}\n",
+    )
+    db_path = tmp_path / "graph.sqlite"
+
+    result = run_index(repo, db_path=db_path)
+
+    assert isinstance(result, IndexResult)
+    assert result.stats["files"] == "2"
+    assert result.stats["language.rust"] == "2"
+    with GraphStore(db_path) as store:
+        rows = store.conn.execute(
+            """
+            SELECT node.kind, node.language, node.name, node.symbol_key, file.path
+            FROM node
+            JOIN file ON file.id = node.file_id
+            ORDER BY node.symbol_key
+            """
+        ).fetchall()
+        symbols = {row["symbol_key"] for row in rows}
+        assert "rust:src/lib.rs#gateway" in symbols
+        assert "rust:src/lib.rs#PaymentService" in symbols
+        assert "rust:src/lib.rs#PaymentService.gateway" in symbols
+        assert "rust:src/lib.rs#PaymentError.InvalidAmount" in symbols
+        assert "rust:src/lib.rs#Authorizer.authorize(&self,PaymentRequest)" in symbols
+        assert (
+            "rust:src/lib.rs#PaymentService.authorize(&self,PaymentRequest)" in symbols
+        )
+        assert (
+            "rust:src/lib.rs#PaymentService.validate(&self,&PaymentRequest)" in symbols
+        )
 
         edge_rows = store.conn.execute(
             "SELECT kind, unresolved_dst FROM edge ORDER BY id"

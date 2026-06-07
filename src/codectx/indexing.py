@@ -22,6 +22,7 @@ from codectx.frontends.go_treesitter import GoTreeSitterFrontend
 from codectx.frontends.java_treesitter import JavaTreeSitterFrontend
 from codectx.frontends.matlab_treesitter import MatlabTreeSitterFrontend
 from codectx.frontends.python_treesitter import PythonTreeSitterFrontend
+from codectx.frontends.rust_treesitter import RustTreeSitterFrontend
 from codectx.graph.store import GraphStore
 from codectx.scanner.models import FileRecord
 from codectx.scanner.repo import ScanOptions, scan_repository
@@ -224,6 +225,7 @@ def default_frontends() -> FrontendRegistry:
         "java": JavaTreeSitterFrontend(),
         "matlab": MatlabTreeSitterFrontend(),
         "python": PythonTreeSitterFrontend(),
+        "rust": RustTreeSitterFrontend(),
     }
 
 

@@ -2,7 +2,7 @@
 
 ID: V3-004
 Title: Add Rust indexing frontend
-Status: todo
+Status: done
 Depends on: V3-001
 Requirement coverage: Language expansion; scanner, frontend extraction, indexing, querying, and context bundle behavior.
 Milestone: V3 - Additional language support
