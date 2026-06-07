@@ -53,6 +53,14 @@ FIXTURE_DIR = Path(__file__).parent / "fixtures"
             4,
             "src/PaymentService.m",
         ),
+        (
+            "go_basic",
+            "authorize",
+            "PaymentService",
+            "PaymentService.Authorize",
+            4,
+            "service.go",
+        ),
     ],
 )
 def test_cli_acceptance_commands_on_golden_fixtures(

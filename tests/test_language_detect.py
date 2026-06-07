@@ -21,6 +21,10 @@ def test_detect_matlab() -> None:
     assert detect_language("src/notebook.mlx") is None
 
 
+def test_detect_go() -> None:
+    assert detect_language("service.go") == "go"
+
+
 def test_detect_unsupported() -> None:
     assert detect_language("README.md") is None
 
@@ -30,3 +34,4 @@ def test_likely_test() -> None:
     assert is_likely_test("tests/foo_test.cpp")
     assert is_likely_test("tests/test_service.py")
     assert is_likely_test("src/service_test.py")
+    assert is_likely_test("service_test.go")

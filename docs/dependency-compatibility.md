@@ -15,6 +15,7 @@ stable release.
 | `tree-sitter-cpp` | `>=0.23,<0.24` | Runtime compatibility test parses minimal C++. |
 | `tree-sitter-python` | `>=0.23,<0.24` | Runtime compatibility test parses minimal Python. |
 | `tree-sitter-matlab` | `>=1.3,<1.4` | Runtime compatibility test parses minimal MATLAB. |
+| `tree-sitter-go` | `>=0.23,<0.24` | Runtime compatibility test parses minimal Go. |
 
 ## Upgrade Checklist
 

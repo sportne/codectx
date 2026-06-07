@@ -102,3 +102,36 @@ Known limitations:
   runtime-dispatched calls remain heuristic.
 - MATLAB scripts may rely on file/source fallback when no clear symbols exist.
 - MATLAB `.mlx` files are unsupported.
+
+## V3 Go Fixture Validation
+
+Date: 2026-06-07
+
+Scope:
+
+- Go fixture: `tests/fixtures/go_basic`
+- Rust remains a planned future task and is not documented as supported until
+  V3-004 is complete.
+
+Validation commands:
+
+```bash
+make ci
+make artifact-smoke
+./dist/codectx.pex index tests/fixtures/go_basic --db /tmp/go.sqlite --rebuild
+./dist/codectx.pex context --repo tests/fixtures/go_basic --db /tmp/go.sqlite --file service.go --goal explain --format json
+```
+
+Results:
+
+- Go indexing records `.go` files, package namespaces, imports, structs,
+  interfaces, fields, functions, receiver methods, type references, unresolved
+  calls, chunks, and parser diagnostics.
+- Go `*_test.go` files are marked as tests and can contribute related context.
+- The PEX artifact smoke indexes the Go fixture and verifies file-only
+  `context --file service.go`.
+
+Known limitations:
+
+- Go module/package resolution, interface dispatch, and external package calls
+  remain heuristic.

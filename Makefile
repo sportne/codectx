@@ -15,6 +15,7 @@ PEX_FLAGS ?= --venv --python-shebang "/usr/bin/env python3"
 PEX_RESOLVE_FLAGS ?= \
 	--only-binary tree-sitter \
 	--only-binary tree-sitter-cpp \
+	--only-binary tree-sitter-go \
 	--only-binary tree-sitter-java \
 	--only-binary tree-sitter-matlab \
 	--only-binary tree-sitter-python
@@ -108,7 +109,9 @@ artifact-smoke: artifact
 	"$(PYTHON)" "$(ARTIFACT)" index tests/fixtures/python_basic --db "$$tmp_dir/python.sqlite" --rebuild >/dev/null; \
 	"$(PYTHON)" "$(ARTIFACT)" context --repo tests/fixtures/python_basic --db "$$tmp_dir/python.sqlite" --file src/payments/service.py --goal explain --budget 1000 --format json >/dev/null; \
 	"$(PYTHON)" "$(ARTIFACT)" index tests/fixtures/matlab_basic --db "$$tmp_dir/matlab.sqlite" --rebuild >/dev/null; \
-	"$(PYTHON)" "$(ARTIFACT)" context --repo tests/fixtures/matlab_basic --db "$$tmp_dir/matlab.sqlite" --file src/PaymentService.m --goal explain --budget 1000 --format json >/dev/null
+	"$(PYTHON)" "$(ARTIFACT)" context --repo tests/fixtures/matlab_basic --db "$$tmp_dir/matlab.sqlite" --file src/PaymentService.m --goal explain --budget 1000 --format json >/dev/null; \
+	"$(PYTHON)" "$(ARTIFACT)" index tests/fixtures/go_basic --db "$$tmp_dir/go.sqlite" --rebuild >/dev/null; \
+	"$(PYTHON)" "$(ARTIFACT)" context --repo tests/fixtures/go_basic --db "$$tmp_dir/go.sqlite" --file service.go --goal explain --budget 1000 --format json >/dev/null
 
 release-ci: ci package-smoke artifact-smoke
 

@@ -67,8 +67,9 @@ def test_run_index_and_read_health_round_trip(tmp_path: Path) -> None:
 def test_default_frontends_register_builtin_languages() -> None:
     frontends = default_frontends()
 
-    assert sorted(frontends) == ["cpp", "java", "matlab", "python"]
+    assert sorted(frontends) == ["cpp", "go", "java", "matlab", "python"]
     assert frontends["cpp"].language == "cpp"
+    assert frontends["go"].language == "go"
     assert frontends["java"].language == "java"
     assert frontends["matlab"].language == "matlab"
     assert frontends["python"].language == "python"
@@ -285,6 +286,64 @@ def test_run_index_persists_matlab_graph_facts_and_script_chunks(
         edge_rows = store.conn.execute(
             "SELECT kind, unresolved_dst FROM edge ORDER BY id"
         ).fetchall()
+        assert any(row["kind"] == "calls" for row in edge_rows)
+        assert any(row["kind"] == "contains" for row in edge_rows)
+
+
+def test_run_index_persists_go_graph_facts(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    _write(
+        repo / "service.go",
+        "package payments\n\n"
+        'import "context"\n\n'
+        "type PaymentService struct { Gateway PaymentGateway }\n"
+        "type PaymentGateway interface { Charge(context.Context, PaymentRequest) (Receipt, error) }\n"
+        "type PaymentRequest struct { Amount int }\n"
+        "type Receipt struct { Approved bool }\n\n"
+        "func (s *PaymentService) Authorize(ctx context.Context, request PaymentRequest) (Receipt, error) {\n"
+        "    s.validate(request)\n"
+        "    return s.Gateway.Charge(ctx, request)\n"
+        "}\n\n"
+        "func (s *PaymentService) validate(request PaymentRequest) error { return nil }\n",
+    )
+    _write(
+        repo / "service_test.go",
+        "package payments\n\n"
+        "func TestAuthorizeAllowsValidPayment() {\n"
+        "    service := PaymentService{}\n"
+        "    service.Authorize(nil, PaymentRequest{Amount: 42})\n"
+        "}\n",
+    )
+    db_path = tmp_path / "graph.sqlite"
+
+    result = run_index(repo, db_path=db_path)
+
+    assert isinstance(result, IndexResult)
+    assert result.stats["files"] == "2"
+    assert result.stats["language.go"] == "2"
+    with GraphStore(db_path) as store:
+        rows = store.conn.execute(
+            """
+            SELECT node.kind, node.language, node.name, node.symbol_key, file.path
+            FROM node
+            JOIN file ON file.id = node.file_id
+            ORDER BY node.symbol_key
+            """
+        ).fetchall()
+        symbols = {row["symbol_key"] for row in rows}
+        assert "go:service.go#payments" in symbols
+        assert "go:service.go#PaymentService" in symbols
+        assert "go:service.go#PaymentService.Gateway" in symbols
+        assert (
+            "go:service.go#PaymentService.Authorize(context.Context,PaymentRequest)"
+            in symbols
+        )
+        assert "go:service.go#PaymentService.validate(PaymentRequest)" in symbols
+
+        edge_rows = store.conn.execute(
+            "SELECT kind, unresolved_dst FROM edge ORDER BY id"
+        ).fetchall()
+        assert any(row["kind"] == "imports" for row in edge_rows)
         assert any(row["kind"] == "calls" for row in edge_rows)
         assert any(row["kind"] == "contains" for row in edge_rows)
 

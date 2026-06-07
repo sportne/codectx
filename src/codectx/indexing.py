@@ -18,6 +18,7 @@ from codectx.frontends.base import (
     OccurrenceFact,
 )
 from codectx.frontends.cpp_treesitter import CppTreeSitterFrontend
+from codectx.frontends.go_treesitter import GoTreeSitterFrontend
 from codectx.frontends.java_treesitter import JavaTreeSitterFrontend
 from codectx.frontends.matlab_treesitter import MatlabTreeSitterFrontend
 from codectx.frontends.python_treesitter import PythonTreeSitterFrontend
@@ -219,6 +220,7 @@ def default_frontends() -> FrontendRegistry:
     """Return built-in language frontends used by index orchestration."""
     return {
         "cpp": CppTreeSitterFrontend(),
+        "go": GoTreeSitterFrontend(),
         "java": JavaTreeSitterFrontend(),
         "matlab": MatlabTreeSitterFrontend(),
         "python": PythonTreeSitterFrontend(),
