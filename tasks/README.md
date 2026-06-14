@@ -161,3 +161,15 @@ Status values: `todo`, `in_progress`, `blocked`, `done`.
 | Task | Name | Status | File |
 | --- | --- | --- | --- |
 | V4-001 | Prepare 1.1.0 release candidate with manual QA | done | [v4-001-prepare-1-1-0-release.md](v4-001-prepare-1-1-0-release.md) |
+
+## Current status
+
+`1.1.0` has been released. All tracked MVP, V1, V2, V3, and V4 tasks are
+`done`; there are no active `todo`, `in_progress`, or `blocked` tasks in this
+tracker. The next product implementation task requires a new roadmap decision.
+
+## V5 - Post-1.1 maintenance
+
+| Task | Name | Status | File |
+| --- | --- | --- | --- |
+| V5-001 | Reconcile post-1.1 project status and roadmap | done | [v5-001-reconcile-post-1-1-project-status-and-roadmap.md](v5-001-reconcile-post-1-1-project-status-and-roadmap.md) |

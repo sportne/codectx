@@ -13,7 +13,8 @@ Rationale:
 
 Users need clear language-support documentation and release validation for the
 expanded language set implemented in this run. This task is scoped to Python
-and MATLAB; Go and Rust remain planned future tasks.
+and MATLAB. Go and Rust were subsequently completed by V3-003 and V3-004 and
+released in `1.1.0`.
 
 Work:
 
@@ -37,3 +38,9 @@ Acceptance:
 - PEX smoke or acceptance coverage exercises at least one newly supported
   language.
 - `make ci` and `make artifact-smoke` pass.
+
+Post-1.1 note:
+
+- The acceptance criteria above describe the original Python/MATLAB scope of
+  V3-005. The current released language set is Java, C++, Python, MATLAB, Go,
+  and Rust.

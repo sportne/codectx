@@ -110,8 +110,7 @@ Date: 2026-06-07
 Scope:
 
 - Go fixture: `tests/fixtures/go_basic`
-- Rust remains a planned future task and is not documented as supported until
-  V3-004 is complete.
+- Rust was completed later in V3-004 and is validated in the following section.
 
 Validation commands:
 

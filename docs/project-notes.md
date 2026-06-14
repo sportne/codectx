@@ -77,6 +77,7 @@ ranges for `pathspec`, `tree-sitter`, `tree-sitter-java`, `tree-sitter-cpp`,
 
 - [`06-1.0-release-criteria.md`](06-1.0-release-criteria.md)
 - [`08-1.0-readiness-audit.md`](08-1.0-readiness-audit.md)
+- [`09-1.1-release-readiness.md`](09-1.1-release-readiness.md)
 - [`dependency-compatibility.md`](dependency-compatibility.md)
 - [`release-automation.md`](release-automation.md)
 - [`validation-notes.md`](validation-notes.md)
