@@ -156,7 +156,7 @@ def test_indexed_source_size_uses_scan_filters(tmp_path: Path) -> None:
     (repo / "third_party").mkdir()
     source = "class App {}\n"
     ignored_source = "class Vendored {}\n"
-    (repo / "src" / "App.java").write_text(source, encoding="utf-8")
+    (repo / "src" / "App.java").write_text(source, encoding="utf-8", newline="\n")
     (repo / "third_party" / "Vendored.java").write_text(
         ignored_source, encoding="utf-8"
     )

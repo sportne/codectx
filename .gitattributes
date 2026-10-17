@@ -1,0 +1,2 @@
+# Golden source fixtures contain byte-accurate spans and context.
+tests/fixtures/** text eol=lf
